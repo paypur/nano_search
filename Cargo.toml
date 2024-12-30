@@ -1,10 +1,11 @@
 [package]
-name = "NanoSearch"
+name = "nano_search"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-heed = "0.20.4"
+heed = "0.21.0"
 byteorder = "1.5.0"
 nanopyrs = "0.4.0"
-num-bigint = "0.4.6"
+etcommon-bigint = "0.2.10"
+nanocurrency-types = "0.4.0"
