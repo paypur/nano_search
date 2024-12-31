@@ -44,19 +44,32 @@ impl Trie {
         }
     }
 
-    pub fn lookup(&self, word: &[u8]) -> Option<Trie> {
+    pub fn lookup(&self, word: &[u8]) -> Option<&Trie> {
         let i = Self::index_of(word[0]);
         if self.edges[i].is_some() {
+            let op = self.edges[i].as_deref();
             if word.len() == 1 {
-                self.edges[i]
+                op
             } else {
-                self.edges[i]?.lookup(&word[1..word.len()])
+                op?.lookup(&word[1..word.len()])
             }
         } else {
             None
         }
     }
 
-    pub fn auto_complete(&self, word: &[u8]) -> () {}
+    pub fn auto_complete(&self) -> String {
+        let first = self.edges.iter().find(|edge| edge.is_some());
+        if first.is_some() {
+            let next = first.unwrap().as_ref().unwrap();
+            let right = next.auto_complete();
+            // first char is already going to be in look up word?
+            let mut left = (next.value as char).to_string();
+            left.push_str(&right);
+            left
+        } else {
+            "".to_string()
+        }
+    }
 }
 
