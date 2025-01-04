@@ -10,33 +10,39 @@ use crate::trie::Trie;
 
 // https://github.com/nanocurrency/nanodb-specification
 fn main() -> Result<(), Box<dyn Error>> {
-    // let env = unsafe {
-    //     EnvOpenOptions::new()
-    //         .max_dbs(1000)
-    //         .open("./")?
-    // };
-    //
-    // let mut read_tx = env.read_txn()?;
-    // let accounts: Database<Accounts, DecodeIgnore> = env.open_database(&mut read_tx, Some("accounts"))?.expect("accounts db should exist");
-    //
-    // for result in accounts.iter(&read_tx)? {
-    //     // public key
-    //     let (accounts_key, ()) = result?;
-    //     let account = Account::from_bytes(accounts_key).expect("failed to derive account");
-    //     // println!("{:?}", account.account);
-    //     root.build(account.account.strip_prefix("nano_").unwrap().as_bytes());
-    // }
-    //
-    // read_tx.commit()?;
+    let start = chrono::offset::Local::now().timestamp();
 
-    let test = "nano_111e9un3ippftfysuba9kb9fqnpz3dssa7px1o78geazunjbxr3i954wtkco"
-        .strip_prefix("nano_").unwrap().as_bytes();
-    let mut root: Trie = Trie::new();
-    root.build(test);
-    let base = root.lookup(b"111e9un3ippftfysuba9kb9fqnpz3dssa7px1o78geazunjbxr");
-    let res = base.unwrap().auto_complete();
+    let env = unsafe {
+        EnvOpenOptions::new()
+            .max_dbs(1000)
+            .open("./")?
+    };
 
-    println!("{:?}", res);
+    let mut read_tx = env.read_txn()?;
+    let accounts: Database<Accounts, DecodeIgnore> = env.open_database(&mut read_tx, Some("accounts"))?.expect("accounts db should exist");
+
+    let mut root = Trie::new();
+
+    let mut count = 0;
+    for result in accounts.iter(&read_tx)? {
+        // public key
+        let (accounts_key, ()) = result?;
+        let account = Account::from_bytes(accounts_key).expect("failed to derive account");
+        println!("account: {:?}", account.account);
+        root.build(account.account.strip_prefix("nano_")
+            .unwrap());
+
+        // count += 1;
+        // if count == 100 {
+        //     break;
+        // }
+    }
+
+    read_tx.commit()?;
+
+    println!("Finished building trie with {:} addresses in {:} seconds", count, chrono::offset::Local::now().timestamp() - start);
+
+    println!("Found {:?}", root.search("11111".to_string()));
 
     Ok(())
 }
