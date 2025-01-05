@@ -1,45 +1,43 @@
 use std::cell::RefCell;
-use std::ops::Deref;
 use std::rc::Rc;
+use nano_search::CHAR_INDEX_MAP;
 
 const AUTO_COMPLETE_LIMIT: usize = 5;
 
 type TrieRef = Rc<RefCell<Trie>>;
 
+
+// no 0 2 l v
 #[derive(Debug)]
 pub struct Trie {
-    pub edges: [Option<TrieRef>; 36],
-    pub value: char,
+    pub edges: [Option<TrieRef>; 32],
+    pub value: u8,
     pub is_terminal: bool,
 }
 
 impl Trie {
     pub fn new() -> Trie {
         Trie {
-            edges: [const { None }; 36],
-            value: '\0',
+            edges: [const { None }; 32],
+            value: 0,
             is_terminal: false,
         }
     }
 
-    pub fn from(c: char) -> Trie {
+    pub fn from(c: u8) -> Trie {
         Trie {
-            edges: [const { None }; 36],
+            edges: [const { None }; 32],
             value: c,
             is_terminal: false,
         }
     }
 
-    pub fn index_of(c: char) -> usize {
-        let mut i = c as usize - '0' as usize;
-        if i > '9' as usize - b'0' as usize {
-            i -= 'a' as usize - ':' as usize;
-        }
-        i
+    pub fn index_of(c: u8) -> usize {
+        CHAR_INDEX_MAP[c as usize] as usize
     }
 
     pub fn build(&mut self, word: &str) {
-        let c = word.chars().nth(0).unwrap();
+        let c = word.chars().nth(0).unwrap() as u8;
         let i = Self::index_of(c);
 
         if self.edges[i].is_none() {
@@ -77,7 +75,7 @@ impl Trie {
 
 
     fn find(&self, word: &str) -> Option<TrieRef> {
-        let c = word.chars().nth(0).unwrap();
+        let c = word.chars().nth(0).unwrap() as u8;
         let i = Self::index_of(c);
 
         match &self.edges[i] {

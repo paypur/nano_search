@@ -5,7 +5,7 @@ use heed::EnvOpenOptions;
 use std::error::Error;
 use heed::types::DecodeIgnore;
 use nanopyrs::Account;
-use nano_search::Accounts;
+use nano_search::{Accounts};
 use crate::trie::Trie;
 
 // https://github.com/nanocurrency/nanodb-specification
@@ -14,7 +14,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let env = unsafe {
         EnvOpenOptions::new()
-            .max_dbs(1000)
+            .max_dbs(100)
             .open("./")?
     };
 
@@ -28,21 +28,21 @@ fn main() -> Result<(), Box<dyn Error>> {
         // public key
         let (accounts_key, ()) = result?;
         let account = Account::from_bytes(accounts_key).expect("failed to derive account");
-        println!("account: {:?}", account.account);
+        // println!("account: {:?}", account.account);
         root.build(account.account.strip_prefix("nano_")
             .unwrap());
 
-        // count += 1;
-        // if count == 100 {
-        //     break;
-        // }
+        count += 1;
+        if count % 100000 == 0 {
+            println!("{}", count);
+        }
     }
 
     read_tx.commit()?;
 
     println!("Finished building trie with {:} addresses in {:} seconds", count, chrono::offset::Local::now().timestamp() - start);
 
-    println!("Found {:?}", root.search("11111".to_string()));
+    // println!("Found {:?}", root.search("11111".to_string()));
 
     Ok(())
 }
