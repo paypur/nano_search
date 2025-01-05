@@ -8,3 +8,8 @@ heed = "0.21.0"
 nanopyrs = "0.4.0"
 nanocurrency-types = "0.4.0"
 chrono = "0.4.39"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"

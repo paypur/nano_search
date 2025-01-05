@@ -15,6 +15,15 @@ pub struct Trie {
     pub is_terminal: bool,
 }
 
+/*
+$ rustc +nightly -Zprint-type-sizes src/test.rs
+print-type-size type: `Trie`: 264 bytes, alignment: 8 bytes
+print-type-size     field `.edges`: 256 bytes
+print-type-size     field `.value`: 1 bytes
+print-type-size     field `.is_terminal`: 1 bytes
+print-type-size     end padding: 6 bytes
+*/
+
 impl Trie {
     pub fn new() -> Trie {
         Trie {

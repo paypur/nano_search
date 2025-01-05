@@ -29,8 +29,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         let (accounts_key, ()) = result?;
         let account = Account::from_bytes(accounts_key).expect("failed to derive account");
         // println!("account: {:?}", account.account);
-        root.build(account.account.strip_prefix("nano_")
-            .unwrap());
+
+        // https://docs.nano.org/integration-guides/the-basics/
+        // TODO: remove check sum, should be able to calculate
+        root.build(
+            &account.account
+            .strip_prefix("nano_")
+            .unwrap()
+            [0..52]
+        );
 
         count += 1;
         if count % 100000 == 0 {
