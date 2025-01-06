@@ -10,6 +10,7 @@ nanocurrency-types = "0.4.0"
 chrono = "0.4.39"
 
 [profile.release]
+debug = true
 lto = true
 codegen-units = 1
 panic = "abort"

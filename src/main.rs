@@ -6,7 +6,7 @@ use std::error::Error;
 use heed::types::DecodeIgnore;
 use nanopyrs::Account;
 use nano_search::{Accounts};
-use crate::trie::Trie;
+use crate::trie::{Trie, TrieRefVec};
 
 // https://github.com/nanocurrency/nanodb-specification
 fn main() -> Result<(), Box<dyn Error>> {
@@ -49,7 +49,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("Finished building trie with {:} addresses in {:} seconds", count, chrono::offset::Local::now().timestamp() - start);
 
-    // println!("Found {:?}", root.search("11111".to_string()));
+    // println!("Found {:?}", root.search("1111".to_string()));
+    // println!("Found {:?}", root.search("31".to_string()));
+    // println!("Found {:?}", root.search("a".to_string()));
+    // println!("Found {:?}", root.search("3bc".to_string()));
 
     Ok(())
 }
