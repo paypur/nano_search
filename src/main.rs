@@ -52,7 +52,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("Finished building trie with {:} addresses in {:} seconds", count, chrono::offset::Local::now().timestamp() - start);
 
-    // println!("Found {:?}", root.search("11111".to_string()));
+    println!("Found {:?}", root.search("1111".to_string()));
 
     Ok(())
 }
