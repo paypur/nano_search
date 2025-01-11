@@ -1,4 +1,3 @@
-use std::hash::{Hash};
 use heed::{BoxedError, BytesDecode};
 
 pub struct Accounts(pub [u8; 32]);

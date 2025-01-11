@@ -1,12 +1,15 @@
 mod trie;
 
+use std::cell::RefCell;
 use heed::Database;
 use heed::EnvOpenOptions;
 use std::error::Error;
+use std::rc::Rc;
 use heed::types::DecodeIgnore;
 use nanopyrs::Account;
+use sorted_vec::SortedSet;
 use nano_search::{Accounts};
-use crate::trie::Trie;
+use crate::trie::{Trie, TrieRef};
 
 // https://github.com/nanocurrency/nanodb-specification
 fn main() -> Result<(), Box<dyn Error>> {

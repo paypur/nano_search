@@ -1,67 +1,99 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::cmp::Ordering;
 use std::rc::Rc;
+use sorted_vec::FindOrInsert::{Found, Inserted};
+use sorted_vec::SortedSet;
 
 const AUTO_COMPLETE_LIMIT: usize = 5;
 
-type TrieRef = Rc<RefCell<Trie>>;
-
+pub type TrieRef = Rc<RefCell<Trie>>;
 
 // no 0 2 l v
 #[derive(Debug)]
 pub struct Trie {
-    pub edges: HashMap<u8, TrieRef>,
+    pub edges: SortedSet<TrieRef>,
     pub value: u8,
     pub is_terminal: bool,
 }
 
+impl Ord for Trie {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.value.cmp(&other.value)
+    }
+}
+
+impl PartialOrd for Trie {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for Trie {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+}
+
+impl Eq for Trie {
+
+}
+
 /*
 $ rustc +nightly -Zprint-type-sizes src/test.rs
-print-type-size type: `Trie`: 264 bytes, alignment: 8 bytes
-print-type-size     field `.edges`: 256 bytes
-print-type-size     field `.value`: 1 bytes
-print-type-size     field `.is_terminal`: 1 bytes
-print-type-size     end padding: 6 bytes
 */
 
 impl Trie {
     pub fn new() -> Trie {
-        Trie {
-            edges: HashMap::<u8, TrieRef>::with_capacity(1),
-            value: 0,
-            is_terminal: false,
-        }
+        Self::from(0)
     }
 
     pub fn from(c: u8) -> Trie {
         Trie {
-            edges: HashMap::<u8, TrieRef>::with_capacity(1),
+            edges: SortedSet::with_capacity(1),
             value: c,
             is_terminal: false,
         }
     }
 
+    pub fn find(&self, c: u8) -> Option<TrieRef> {
+        let mut l = 0;
+        let mut h = self.edges.len() - 1;
+
+        while l <= h {
+            let m = l + (h - l) >> 1;
+            if self.edges[m].borrow().value < c {
+                l = m + 1;
+            } else if self.edges[m].borrow().value > c {
+                h = m - 1;
+            } else {
+                return Some(self.edges[m].clone());
+            }
+        }
+
+        None
+    }
 
     pub fn build(&mut self, word: &str) {
         let c = word.chars().nth(0).unwrap() as u8;
-        // let i = Self::index_of(c);
 
-        self.edges.entry(c)
-            .or_insert(Rc::new(RefCell::new(Trie::from(c))));
+        let index = match self.edges.find_or_insert(Rc::new(RefCell::new(Trie::from(c)))) {
+            Found(i) => i,
+            Inserted(i) => i,
+            _ => 0,
+        };
 
         if word.len() == 1 {
-            self.edges.get(&c)
-                .unwrap()
+            self.edges[index]
                 .as_ref()
                 .borrow_mut()
                 .is_terminal = true;
         } else {
-            self.edges.get(&c)
-                .unwrap()
+            self.edges[index]
                 .as_ref()
                 .borrow_mut()
                 .build(&word[1..word.len()]);
         }
+
     }
 
 
