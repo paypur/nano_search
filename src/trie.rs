@@ -22,34 +22,25 @@ pub const CHAR_INDEX_MAP: [usize; 128] = [
 ];
 const AUTO_COMPLETE_LIMIT: usize = 5;
 
-// TODO: also try a sorted vec
-
 pub type TrieRef = Rc<RefCell<Trie>>;
 
-// TODO: switch to array
-// len and capacity are always the same
-// remove capacity to save 8 B
-// https://doc.rust-lang.org/src/alloc/raw_vec.rs.html
-
-
 #[derive(Debug)]
-pub struct TrieRefVec (pub Vec<Option<TrieRef>>);
+pub struct TrieRefVec (pub Box<[Option<TrieRef>]>);
 
 impl TrieRefVec {
     pub fn new() -> Self {
-        Self(Vec::with_capacity(0))
+        Self(Box::new([]))
     }
 
     pub fn hash(&self, c: u8, size: usize) -> usize {
-        assert!(self.0.capacity() <= 32);
+        assert!(self.0.len() <= 32);
         CHAR_INDEX_MAP[c as usize] % size
     }
 
     // out of capacity
     // or collision
     pub fn reallocate(&mut self) {
-        // self.0.insert();
-        let double = if self.0.capacity() != 0 { self.0.capacity() * 2 } else { 1 } ;
+        let double = if self.0.len() != 0 { self.0.len() * 2 } else { 1 } ;
         let mut new_vec: Vec<Option<TrieRef>> = Vec::with_capacity(double);
 
         // fill with None
@@ -58,21 +49,21 @@ impl TrieRefVec {
         self.0.iter()
             .flatten()
             .for_each(|tr| {
-                let hash = self.hash(tr.borrow().value, new_vec.capacity());
+                let hash = self.hash(tr.borrow().value, new_vec.len());
                 // all these existing values should not collide
                 new_vec[hash] = Some(tr.clone());
             }
         );
 
-        self.0 = new_vec;
+        self.0 = new_vec.into_boxed_slice();
     }
 
     pub fn contains(&self, char: u8) -> bool {
-        if self.0.capacity() == 0 {
+        if self.0.len() == 0 {
             return false;
         }
 
-        let hash = self.hash(char, self.0.capacity());
+        let hash = self.hash(char, self.0.len());
         if let Some(tr) = self.0.get(hash).unwrap() {
             return tr.borrow().value == char;
         }
@@ -80,11 +71,11 @@ impl TrieRefVec {
     }
 
     pub fn insert(&mut self, trie: TrieRef) {
-        if self.0.capacity() == 0 {
+        if self.0.len() == 0 {
             self.reallocate();
         }
 
-        let hash = self.hash(trie.borrow().value, self.0.capacity());
+        let hash = self.hash(trie.borrow().value, self.0.len());
         match self.0.get(hash).unwrap() {
             None => {
                 // just insert
@@ -105,7 +96,7 @@ impl TrieRefVec {
     }
 
     pub fn get(&self, char: u8) -> Option<TrieRef> {
-        let hash = self.hash(char, self.0.capacity());
+        let hash = self.hash(char, self.0.len());
         if let Some(tr) = self.0.get(hash).unwrap() {
             if tr.borrow().value == char {
                 return Some(tr.clone());
@@ -126,7 +117,7 @@ pub struct Trie {
 }
 
 /*
-$ rustc +nightly -Zprint-type-sizes src/test.rs
+$ rustc +nightly -Zprint-type-sizes src/trie.rs
 */
 
 impl Trie {
