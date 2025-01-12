@@ -4,13 +4,15 @@ use heed::Database;
 use heed::EnvOpenOptions;
 use std::error::Error;
 use heed::types::DecodeIgnore;
-use nanopyrs::Account;
+use nanopyrs::{Account};
 use nano_search::{Accounts};
-use crate::trie::{Trie, TrieRefVec};
+use crate::trie::{Trie};
 
 // https://github.com/nanocurrency/nanodb-specification
 fn main() -> Result<(), Box<dyn Error>> {
     let start = chrono::offset::Local::now().timestamp();
+
+    let mut root = Trie::new();
 
     let env = unsafe {
         EnvOpenOptions::new()
@@ -21,33 +23,36 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut read_tx = env.read_txn()?;
     let accounts: Database<Accounts, DecodeIgnore> = env.open_database(&mut read_tx, Some("accounts"))?.expect("accounts db should exist");
 
-    let mut root = Trie::new();
-
     let mut count = 0;
     for result in accounts.iter(&read_tx)? {
         // public key
         let (accounts_key, ()) = result?;
-        let account = Account::from_bytes(accounts_key).expect("failed to derive account");
-        // println!("account: {:?}", account.account);
+
+        match Account::from_bytes(accounts_key) {
+            Ok(acc) => {
+                root.build(
+                    &acc.account
+                        .strip_prefix("nano_")
+                        .unwrap()
+                        [0..52] // drop 8 char checksum
+                );
+
+                count += 1;
+                if count % 100000 == 0 {
+                    println!("{}", count);
+                }
+            }
+            Err(_) => {}
+        }
 
         // https://docs.nano.org/integration-guides/the-basics/
-        // TODO: remove check sum, should be able to calculate
-        root.build(
-            &account.account
-            .strip_prefix("nano_")
-            .unwrap()
-            [0..52]
-        );
-
-        count += 1;
-        if count % 100000 == 0 {
-            println!("{}", count);
-        }
     }
 
     read_tx.commit()?;
 
     println!("Finished building trie with {:} addresses in {:} seconds", count, chrono::offset::Local::now().timestamp() - start);
+
+    // TODO: recalculate check sum,
 
     // println!("Found {:?}", root.search("1111".to_string()));
     // println!("Found {:?}", root.search("31".to_string()));

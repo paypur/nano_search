@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-pub const CHAR_INDEX_MAP: [usize; 128] = [
+const CHAR_INDEX_MAP: [usize; 128] = [
     0,0,0,0,0,0,0,0,
     0,0,0,0,0,0,0,0,
     0,0,0,0,0,0,0,0,
@@ -25,7 +25,7 @@ const AUTO_COMPLETE_LIMIT: usize = 5;
 pub type TrieRef = Rc<RefCell<Trie>>;
 
 #[derive(Debug)]
-pub struct TrieRefVec (pub Box<[Option<TrieRef>]>);
+pub struct TrieRefVec (Box<[Option<TrieRef>]>);
 
 impl TrieRefVec {
     pub fn new() -> Self {
@@ -67,6 +67,7 @@ impl TrieRefVec {
         if let Some(tr) = self.0.get(hash).unwrap() {
             return tr.borrow().value == char;
         }
+
         false
     }
 
@@ -87,10 +88,8 @@ impl TrieRefVec {
                     self.reallocate();
                     // recursive to ensure no collision after reallocating
                     self.insert(trie);
-                } else {
-                    // shouldn't happen
-                    todo!()
                 }
+                // shouldn't insert when it already is in array
             },
         }
     }
@@ -105,6 +104,9 @@ impl TrieRefVec {
         None
     }
 
+    pub fn iter(&self) -> std::slice::Iter<'_, Option<Rc<RefCell<Trie>>>> {
+        self.0.iter()
+    }
 }
 
 
@@ -191,7 +193,6 @@ impl Trie {
                         .borrow()
                         .find_base(&word[1..word.len()])
                 }
-
             }
         }
     }
@@ -205,7 +206,7 @@ impl Trie {
 
         let mut collect_vec: Vec<String> = Vec::new();
 
-        for opt in self.edges.0.iter() {
+        for opt in self.edges.iter() {
             if opt.is_some() {
                 let trie = opt.as_ref()
                     .unwrap()
@@ -227,7 +228,7 @@ impl Trie {
             }
         }
 
-        return collect_vec;
+        collect_vec
     }
 }
 
