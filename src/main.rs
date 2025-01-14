@@ -30,10 +30,13 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         match Account::from_bytes(accounts_key) {
             Ok(acc) => {
+                // println!("{}", acc.account);
+
                 root.build(
                     &acc.account
                         .strip_prefix("nano_")
                         .unwrap()
+                        .as_bytes()
                         [0..52] // drop 8 char checksum
                 );
 

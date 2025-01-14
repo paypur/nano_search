@@ -1,121 +1,37 @@
 use std::cell::RefCell;
+use std::cmp::{max, min};
+use std::collections::HashMap;
+use std::fmt::Display;
 use std::rc::Rc;
 
-const CHAR_INDEX_MAP: [usize; 128] = [
-    0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,
-    0,0x0,0,1,2,3,4,5,
-    6,7,0,0,0,0,0,0,
 
-    0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,
-    0, 8, 9,10,11,12,13,14,
-    15,16,17,18, 0,19,20,21,
-    22,23,24,25,26,27, 0,28,
-    29,30,31, 0, 0, 0, 0, 0
-];
 const AUTO_COMPLETE_LIMIT: usize = 5;
 
 pub type TrieRef = Rc<RefCell<Trie>>;
 
-#[derive(Debug)]
-pub struct TrieRefVec (Box<[Option<TrieRef>]>);
-
-impl TrieRefVec {
-    pub fn new() -> Self {
-        Self(Box::new([]))
-    }
-
-    pub fn hash(&self, c: u8, size: usize) -> usize {
-        assert!(self.0.len() <= 32);
-        CHAR_INDEX_MAP[c as usize] % size
-    }
-
-    // out of capacity
-    // or collision
-    pub fn reallocate(&mut self) {
-        let double = if self.0.len() != 0 { self.0.len() * 2 } else { 1 } ;
-        let mut new_vec: Vec<Option<TrieRef>> = Vec::with_capacity(double);
-
-        // fill with None
-        new_vec.resize(double, None);
-
-        self.0.iter()
-            .flatten()
-            .for_each(|tr| {
-                let hash = self.hash(tr.borrow().value, new_vec.len());
-                // all these existing values should not collide
-                new_vec[hash] = Some(tr.clone());
-            }
-        );
-
-        self.0 = new_vec.into_boxed_slice();
-    }
-
-    pub fn contains(&self, char: u8) -> bool {
-        if self.0.len() == 0 {
-            return false;
-        }
-
-        let hash = self.hash(char, self.0.len());
-        if let Some(tr) = self.0.get(hash).unwrap() {
-            return tr.borrow().value == char;
-        }
-
-        false
-    }
-
-    pub fn insert(&mut self, trie: TrieRef) {
-        if self.0.len() == 0 {
-            self.reallocate();
-        }
-
-        let hash = self.hash(trie.borrow().value, self.0.len());
-        match self.0.get(hash).unwrap() {
-            None => {
-                // just insert
-                self.0[hash] = Some(trie);
-            },
-            Some(t) => {
-                if t.borrow().value != trie.borrow().value {
-                    // collision
-                    self.reallocate();
-                    // recursive to ensure no collision after reallocating
-                    self.insert(trie);
-                }
-                // shouldn't insert when it already is in array
-            },
-        }
-    }
-
-    pub fn get(&self, char: u8) -> Option<TrieRef> {
-        let hash = self.hash(char, self.0.len());
-        if let Some(tr) = self.0.get(hash).unwrap() {
-            if tr.borrow().value == char {
-                return Some(tr.clone());
-            }
-        }
-        None
-    }
-
-    pub fn iter(&self) -> std::slice::Iter<'_, Option<Rc<RefCell<Trie>>>> {
-        self.0.iter()
-    }
-}
-
-
 // no 0 2 l v
 #[derive(Debug)]
 pub struct Trie {
-    pub edges: TrieRefVec,
-    pub value: u8,
+    pub edges: HashMap<Vec<u8>, TrieRef>,
+    pub values: Vec<u8>,
     pub is_terminal: bool,
+    pub depth: usize,
+}
+
+// TODO: depth doesnt work properly
+impl Display for Trie {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let string = self.values.iter().map(|x| char::from(*x)).collect::<String>();
+        let mut vec: Vec<_> = self.edges.values().map(|e| e.as_ref().borrow()).collect();
+        vec.sort_by(|a, b| a.values.len().cmp(&b.values.len()));
+        
+        write!(f, "[d:{}|l:{}|\"{}\"|{}]", self.depth, string.len(), string, self.is_terminal)?;
+        
+        vec.iter().for_each(|trie| {
+            write!(f, "\n{}{}", "  ".repeat(self.depth + 1), trie).unwrap();
+        });
+        Ok(())
+    }
 }
 
 /*
@@ -124,112 +40,170 @@ $ rustc +nightly -Zprint-type-sizes src/trie.rs
 
 impl Trie {
     pub fn new() -> Trie {
-        Self::from(0)
+        Self::from(&[])
     }
 
-    pub fn from(c: u8) -> Trie {
+    pub fn from(word: &[u8]) -> Trie {
         Trie {
-            edges: TrieRefVec::new(),
-            value: c,
+            edges: HashMap::with_capacity(1),
+            values: Vec::from(word),
             is_terminal: false,
+            depth: 0,
         }
     }
 
-    pub fn from_ref(c: u8) -> TrieRef {
-        Rc::new(RefCell::new(Trie::from(c)))
+    pub fn to_ref(self) -> TrieRef {
+        Rc::new(RefCell::new(self))
     }
 
-    pub fn build(&mut self, word: &str) {
-        let c = word.chars().nth(0).unwrap() as u8;
-        // let i = Self::index_of(c);
+    pub fn build(&mut self, word: &[u8]) {
+        let mut chars = 0;
+        let mut trie_target: Option<TrieRef> = None;
 
-        if !self.edges.contains(c) {
-            self.edges.insert(Trie::from_ref(c));
-        }
-
-        let tr = self.edges.get(c)
-            .unwrap();
-
-        let mut trie = tr
-            .as_ref()
-            .borrow_mut();
-
-        if word.len() == 1 {
-            trie.is_terminal = true;
-        } else {
-            trie.build(&word[1..word.len()]);
-        }
-    }
-
-    pub fn search(&self, prefix: String) -> Vec<String> {
-        println!("Looking for addresses with prefix \"{}\"", prefix);
-
-        let base = self.find_base(&prefix);
-
-        if let Some(b) = &base {
-            let mut dup = prefix.clone();
-            let _ = dup.pop();
-            return b.as_ref()
-                .borrow()
-                .auto_complete(dup)
-        }
-
-        vec!()
-    }
-
-
-    fn find_base(&self, word: &str) -> Option<TrieRef> {
-        let c = word.chars().nth(0)? as u8;
-
-        match self.edges.get(c) {
-            None => {
-                None
-            }
-            Some(trie) => {
-                if word.len() == 1 {
-                    Some(trie.clone())
+        self.edges.values().for_each(|tr| {
+            let trie = tr.as_ref().borrow_mut();
+            for i in 1..=min(word.len(), trie.values.len()) {
+                if &word[0..i] == &trie.values[0..i] {
+                    if i > chars {
+                        chars = i;
+                        trie_target = Some(tr.clone());
+                    }
                 } else {
-                    trie.as_ref()
-                        .borrow()
-                        .find_base(&word[1..word.len()])
+                    break;
+                }
+            }
+        });
+        
+
+        match trie_target {
+            // no match
+            None => {
+                // insert whole vec
+                let mut trie = Trie::from(&word);
+                trie.is_terminal = true;
+                trie.depth = self.depth + 1;
+                self.edges.insert(word.to_vec(), trie.to_ref());
+            }
+            Some(trie_ref) => {
+                // full match
+                if chars == trie_ref.as_ref().borrow().values.len() {
+                    trie_ref.as_ref()
+                        .borrow_mut()
+                        .build(&word[chars..]);
+                } else {
+                    // partial match
+                    let trie_ref2 = trie_ref.clone();
+    
+                    trie_ref2.as_ref().borrow_mut().depth = self.depth + 2;
+    
+                    let mut trie = trie_ref
+                        .as_ref()
+                        .borrow_mut();
+    
+                    self.edges.remove(&trie.values);
+    
+                    trie.values.drain(0..chars);
+    
+                    // direct descendant
+                    let mut trie_ref_pre = Trie::from(&word[0..chars]).to_ref();
+                    self.edges.insert(word[0..chars].to_vec(), trie_ref_pre.clone());
+    
+                    let mut trie_pre = trie_ref_pre.as_ref().borrow_mut();
+    
+                    // second descendants
+                    // slice of original word
+                    trie_pre.depth = self.depth + 1;
+                    trie_pre.build(&word[chars..]);
+    
+                    // second descendants
+                    // manually insert second trie
+                    trie_pre.edges.insert(trie.values.clone(), trie_ref2);
+                    
                 }
             }
         }
     }
 
-    fn auto_complete(&self, mut prefix: String) -> Vec<String> {
-        prefix.push(self.value as char);
+    // pub fn search(&self, prefix: String) -> Vec<String> {
+    //     println!("Looking for addresses with prefix \"{}\"", prefix);
+    //
+    //     let base = self.find_base(&prefix);
+    //
+    //     if let Some(b) = &base {
+    //         let mut dup = prefix.clone();
+    //         let _ = dup.pop();
+    //         return b.as_ref()
+    //             .borrow()
+    //             .auto_complete(dup)
+    //     }
+    //
+    //     vec!()
+    // }
 
-        if self.is_terminal {
-            return vec!(prefix);
-        }
+    pub fn find_base(&self, word: &[u8]) -> Option<TrieRef> {
+        // find key that contains the most chars
+        let mut l = 0;
+        let mut h = word.len() - 1;
 
-        let mut collect_vec: Vec<String> = Vec::new();
+        while l < h {
+            let m = (h + l) / 2;
 
-        for opt in self.edges.iter() {
-            if opt.is_some() {
-                let trie = opt.as_ref()
-                    .unwrap()
-                    .borrow();
-
-                let mut vec = trie.auto_complete(prefix.clone());
-
-                if vec.len() == 0 {
-                    continue;
-                }
-
-                collect_vec.append(&mut vec);
-
-                if collect_vec.len() == AUTO_COMPLETE_LIMIT {
-                    return collect_vec;
-                } else if collect_vec.len() > AUTO_COMPLETE_LIMIT {
-                    return collect_vec.drain(AUTO_COMPLETE_LIMIT..collect_vec.len()).collect();
-                }
+            if self.edges.contains_key(&word[0..m]) {
+                l = m;
+            } else {
+                h = m - 1;
             }
+
         }
 
-        collect_vec
+        if l == 0 {
+            return None;
+        }
+
+        if l == word.len() {
+            return self.edges.get(&word[0..l].to_vec()).cloned();
+        }
+
+        let trie_ref = self.edges.get(&word[0..h]).unwrap();
+
+        trie_ref.as_ref()
+            .borrow()
+            .find_base(&word[l..])
     }
+
+    // fn auto_complete(&self, mut prefix: String) -> Vec<String> {
+    //     prefix.push(self.value as char);
+    //
+    //     if self.is_terminal {
+    //         return vec!(prefix);
+    //     }
+    //
+    //     let mut collect_vec: Vec<String> = Vec::new();
+    //
+    //     for opt in self.edges.iter() {
+    //         if opt.is_some() {
+    //             let trie = opt.as_ref()
+    //                 .unwrap()
+    //                 .borrow();
+    //
+    //             let mut vec = trie.auto_complete(prefix.clone());
+    //
+    //             if vec.len() == 0 {
+    //                 continue;
+    //             }
+    //
+    //             collect_vec.append(&mut vec);
+    //
+    //             if collect_vec.len() == AUTO_COMPLETE_LIMIT {
+    //                 return collect_vec;
+    //             } else if collect_vec.len() > AUTO_COMPLETE_LIMIT {
+    //                 return collect_vec.drain(AUTO_COMPLETE_LIMIT..collect_vec.len()).collect();
+    //             }
+    //         }
+    //     }
+    //
+    //     collect_vec
+    // }
 }
 
 fn main() {
