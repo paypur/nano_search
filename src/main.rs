@@ -57,10 +57,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // TODO: recalculate check sum,
 
-    // println!("Found {:?}", root.search("1111".to_string()));
-    // println!("Found {:?}", root.search("31".to_string()));
-    // println!("Found {:?}", root.search("a".to_string()));
-    // println!("Found {:?}", root.search("3bc".to_string()));
+    println!("Found {:?}", root.search("1111".to_string()));
+    println!("Found {:?}", root.search("31".to_string()));
+    println!("Found {:?}", root.search("3bc".to_string()));
+    println!("Found {:?}", root.search("a".to_string()));
+    println!("Found {:?}", root.search("".to_string()));
+    println!("Found {:?}", root.search("2x".to_string()));
 
     Ok(())
 }
