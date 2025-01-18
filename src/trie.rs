@@ -51,7 +51,7 @@ impl Trie {
 
     pub fn from(word: &[u8]) -> Self {
         Trie {
-            edges: HashMap::with_capacity(1),
+            edges: HashMap::with_capacity(0),
             values: Vec::from(word).into_boxed_slice(),
             is_terminal: false,
         }
