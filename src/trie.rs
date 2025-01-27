@@ -21,7 +21,8 @@ pub struct TrieMatch {
 // no 0 2 l v
 #[derive(Debug)]
 pub struct Trie {
-    pub edges: HashMap<Box<[u8]>, TrieRef>,
+    // edges keys are prefix free
+    pub edges: HashMap<u8, TrieRef>,
     pub values: Box<[u8]>,
     pub is_terminal: bool,
 }
@@ -87,32 +88,24 @@ impl Trie {
     }
     
     pub fn find_partial_match(&self, word: &[u8]) -> Option<TrieMatch> {
-        for i in 0..word.len()  {
-            if let Some(trie) = self.edges.get(&word[0..word.len()-i]) {
-                // println!("yay matched {}", word[0..word.len()-i].iter().map(|x| char::from(*x)).collect::<String>());
-                return Some(
-                    TrieMatch {
-                        trie: trie.clone(),
-                        len: word.len()-i,
-                    }
-                )
-            }
-        }
         let mut target: Option<TrieMatch> = None;
 
-        // sucks
-        self.edges.values().for_each(|tr| {
-            // println!("fail");
-            let trie = tr.as_ref().borrow_mut();
-            for i in 1..=min(word.len(), trie.values.len()) {
-                if &word[0..i] != &trie.values[0..i] {
+        if let Some(trie) = self.edges.get(&word[0]) {
+            let val = &trie.as_ref().borrow().values;
+            for i in 1..=min(word.len(), val.len()) {
+                if &word[0..i] != &val[0..i] {
                     break;
                 }
                 if target.is_none() || i > target.as_ref().unwrap().len {
-                    target = Some(TrieMatch { trie: tr.clone(), len: i });
+                    target = Some(
+                        TrieMatch {
+                            trie: trie.clone(),
+                            len: i
+                        }
+                    );
                 }
             }
-        });
+        }
 
         target
     }
@@ -124,7 +117,7 @@ impl Trie {
                 // insert whole vec
                 let mut trie = Trie::from(&word);
                 trie.is_terminal = true;
-                self.edges.insert(Box::from(word), trie.to_ref());
+                self.edges.insert(word[0], trie.to_ref());
             }
             Some(wrap) => {
                 if wrap.len == wrap.trie.as_ref().borrow().values.len() {
@@ -139,13 +132,13 @@ impl Trie {
                         .as_ref()
                         .borrow_mut();
 
-                    self.edges.remove(&trie.values);
+                    self.edges.remove(&trie.values[0]);
 
                     trie.values = Vec::from(&trie.values[wrap.len..]).into_boxed_slice();
                     
                     // direct descendant
                     let trie_ref_pre = Trie::from(&word[0..wrap.len]).to_ref();
-                    self.edges.insert(Box::from(&word[0..wrap.len]), trie_ref_pre.clone());
+                    self.edges.insert(word[0], trie_ref_pre.clone());
                     
                     let mut trie_pre = trie_ref_pre.as_ref().borrow_mut();
                     
@@ -155,7 +148,7 @@ impl Trie {
                     
                     // second descendants
                     // insert partially matching second trie
-                    trie_pre.edges.insert(trie.values.clone(), trie_ref2);
+                    trie_pre.edges.insert(trie.values[0], trie_ref2);
                 }
             }
         }
@@ -166,7 +159,7 @@ impl Trie {
         println!("Looking for addresses with prefix \"{}\"", string);
         if !prefix.is_empty() {
             let string2 = prefix[..prefix.len()-1].iter().map(|x| char::from(*x)).collect::<String>();
-    
+
             let base = self.find_base(&prefix);
             if let Some(b) = &base {
                 return b.as_ref()
@@ -174,26 +167,26 @@ impl Trie {
                     .auto_complete(string2) // need to remove 1 char from the right
             }
         }
-    
+
         vec!()
     }
-    
+
     pub fn find_base(&self, word: &[u8]) -> Option<TrieRef> {
         let partial = self.find_partial_match(word);
-        
+
         match partial {
             Some(wrap) => {
                 // full match
                 if wrap.len == word.len() {
                     return Some(wrap.trie.clone())
                 }
-    
+
                 let trie = wrap.trie
                     .as_ref()
                     .borrow();
-    
+
                 assert_eq!(&trie.values[..wrap.len], &word[..wrap.len]);
-    
+
                 // partial match
                 // even though all closest.len don't match, the edge should be the only possible path
                 return trie.find_base(&word[trie.values.len()..]);
@@ -201,37 +194,37 @@ impl Trie {
             None => None,
         }
     }
-    
+
     fn auto_complete(&self, mut prefix: String) -> Vec<String> {
         prefix.push_str(&self.values.iter().map(|x| char::from(*x)).collect::<String>());
-    
+
         if self.is_terminal {
             return vec!(prefix);
         }
-    
+
         let mut collect_vec: Vec<String> = Vec::new();
-    
+
         // TODO: ordering is still!! wrong
         let mut x1 = self.edges.values().collect::<Vec<&TrieRef>>();
         x1.sort_by(|a, b| a.as_ref().borrow().values.cmp(&b.as_ref().borrow().values));
         for trie_ref in x1 {
             let trie = trie_ref.as_ref().borrow();
-    
+
             let mut vec = trie.auto_complete(prefix.clone());
-    
+
             if vec.len() == 0 {
                 continue;
             }
-    
+
             collect_vec.append(&mut vec);
-    
+
             if collect_vec.len() == AUTO_COMPLETE_LIMIT {
                 return collect_vec;
             } else if collect_vec.len() > AUTO_COMPLETE_LIMIT {
                 return collect_vec.drain(AUTO_COMPLETE_LIMIT..collect_vec.len()).collect();
             }
         }
-    
+
         collect_vec
     }
 }
