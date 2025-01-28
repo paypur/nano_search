@@ -82,7 +82,7 @@ mod tests {
                     root.build(
                         &acc.account
                             .strip_prefix("nano_")
-                            .unwrap()
+                            .expect("Address should prefix with 'nano_'!")
                             .as_bytes()
                             [0..52] // drop 8 char checksum
                     );
@@ -101,13 +101,17 @@ mod tests {
         e2.sort_by(|a, b| a.cmp(&b));
         e3.sort_by(|a, b| a.cmp(&b));
     
-        let r1 = root.search(b"1111");
-        let r2 = root.search(b"31");
-        let r3 = root.search(b"3bc");
+        let mut r1 = root.search(b"1111");
+        let mut r2 = root.search(b"31");
+        let mut r3 = root.search(b"3bc");
         let r4 = root.search(b"a");
         let r5 = root.search(b"");
         let r6 = root.search(b"2x");
-    
+
+        r1.sort_by(|a, b| a.cmp(&b));
+        r2.sort_by(|a, b| a.cmp(&b));
+        r3.sort_by(|a, b| a.cmp(&b));
+
         assert_eq!(r1.as_slice(), e1);
         assert_eq!(r2.as_slice(), e2);
         assert_eq!(r3.as_slice(), e3);
