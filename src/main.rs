@@ -35,7 +35,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         .strip_prefix("nano_")
                         .unwrap()
                         .as_bytes()
-                        [0..52] // drop 8 char checksum, only saves like 20 MB
+                        [0..52] // drop 8 char checksum
                 );
                 count += 1;
                 if count % 100000 == 0 {
@@ -49,9 +49,30 @@ fn main() -> Result<(), Box<dyn Error>> {
     read_tx.commit()?;
     
     println!("Finished building trie with {:} addresses in {:} seconds", count, chrono::offset::Local::now().timestamp() - start);
-    
+
+    let look = chrono::offset::Local::now().timestamp_micros();
+
+    println!("{}", root.search(b"1pay").join("\n"));
+
+    println!("Finished searching in {:} micro-seconds", chrono::offset::Local::now().timestamp_micros() - look);
+
     Ok(())
 }
+
+// Main net test
+// Finished building trie with 36886987 addresses in 135 seconds
+// Looking for addresses with prefix "1pay"
+// 1pay131j4o7ybno9bh9ymx6dfuf5cp38fjkbcudcyhqcmbugpb3u
+// 1pay175ycu9cbupwdy3nd6f1kobm4d1a5ug9hg3thfsqrx8q4g9k
+// 1pay19xc16cuyo3w86c4rxjn7gsddoxw1qpahpy8arfuj5qaqpr1
+// 1pay1b68cd8io6qt7jiy9cu9n7fjh4fjacxi3ydfec755tr46mni
+// 1pay1bb5sjkxuycuzhis47g3z1d9nqpkqud8tecrzrp78xnqceet
+// 1pay1bs7iuiirnabzz7hsj8mzgkso9857uq4o6rwehwx9czirj9m
+// 1pay1ger4tkqwmyeqndq7zz149dmxcy1oq4tk9hzrim7x1w16ciq
+// 1pay1gen41unujxb4ced9fkagwczy7b565tfkbueyys7hk9ihbbp
+// 1pay1gm8tishb41cj4ge95miecmhczo9r18qyi5uuhiz81ccrhgh
+// 1pay1gwjcdqh76diiewiypcdsydytyq17si13kfy3biyfqhoopmu
+// Finished searching in 11 micro-seconds
 
 #[cfg(test)]
 mod tests {

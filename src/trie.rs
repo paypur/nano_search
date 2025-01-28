@@ -24,7 +24,7 @@ const CHAR_INDEX_MAP: [usize; 128] = [
     22,23,24,25,26,27, 0,28,
     29,30,31, 0, 0, 0, 0, 0
 ];
-const AUTO_COMPLETE_LIMIT: usize = 5;
+const AUTO_COMPLETE_LIMIT: usize = 10;
 
 pub type TrieRef = Rc<RefCell<Trie>>;
 
@@ -232,7 +232,7 @@ impl Trie {
         vec
     }
 
-    pub fn find_partial_match(&self, word: &[u8]) -> Option<TrieMatch> {
+    fn find_partial_match(&self, word: &[u8]) -> Option<TrieMatch> {
         let mut target: Option<TrieMatch> = None;
 
         if let Some(trie) = self.edges.get(word[0]) {
@@ -315,7 +315,7 @@ impl Trie {
         vec!()
     }
 
-    pub fn find_base(&self, word: &[u8]) -> Option<TrieRef> {
+    fn find_base(&self, word: &[u8]) -> Option<TrieRef> {
         let partial = self.find_partial_match(word);
 
         match partial {
