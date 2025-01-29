@@ -24,7 +24,7 @@ const CHAR_INDEX_MAP: [usize; 128] = [
     22,23,24,25,26,27, 0,28,
     29,30,31, 0, 0, 0, 0, 0
 ];
-const AUTO_COMPLETE_LIMIT: usize = 10;
+const AUTO_COMPLETE_LIMIT: usize = 5;
 
 pub type TrieRef = Rc<RefCell<Trie>>;
 
@@ -156,15 +156,14 @@ impl Display for TrieRefEdges {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct TrieMatch {
     pub trie: TrieRef,
     pub len: usize,
 }
 
 // no 0 2 l v
-#[derive(Debug)]
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct Trie {
     // edges keys are prefix free
     pub edges: TrieRefEdges,
@@ -178,6 +177,7 @@ impl Display for Trie {
 
         write!(f, "{}", vec.join("\n"))?;
 
+        // only direct descendants
         // let vec = self.edges.values().collect::<Vec<_>>();
         //
         // vec.iter().for_each(|s| {
@@ -236,11 +236,12 @@ impl Trie {
         let mut target: Option<TrieMatch> = None;
 
         if let Some(trie) = self.edges.get(word[0]) {
-            for i in 1..=min(word.len(), trie.borrow().values.len()) {
-                if &word[0..i] != &trie.borrow().values[0..i] {
+            let byte_string = &trie.borrow().values;
+            for i in 1..=min(word.len(), byte_string.len()) {
+                if word[0..i] != byte_string[0..i] {
                     break;
                 }
-                if target.is_none() || i > target.as_ref().unwrap().len {
+                if target.is_none() || i > target.clone().unwrap().len {
                     target = Some(
                         TrieMatch {
                             trie: trie.clone(),
@@ -277,8 +278,8 @@ impl Trie {
                     self.edges.insert(trie_ref_prefix.clone());
 
                     // second descendants
-                    let mut trie_mut_prefix = trie_ref_prefix.borrow_mut();
                     // slice of original word
+                    let mut trie_mut_prefix = trie_ref_prefix.borrow_mut();
                     trie_mut_prefix.build(&word[wrap.len..]);
 
                     // second descendants
