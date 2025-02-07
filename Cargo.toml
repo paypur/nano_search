@@ -6,8 +6,9 @@ edition = "2021"
 [dependencies]
 heed = "0.21.0"
 nanopyrs = "0.4.0"
-nanocurrency-types = "0.4.0"
+# nanocurrency-types = "0.4.0"
 chrono = "0.4.39"
+rocket = "0.5.1"
 
 [profile.release]
 debug = true

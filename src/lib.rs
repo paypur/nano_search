@@ -10,6 +10,7 @@ impl BytesDecode<'_> for Accounts {
     }
 }
 
+// https://crates.io/crates/bitvec
 #[derive(Debug, PartialEq)]
 pub struct ByteString(Box<[u8]>);
 

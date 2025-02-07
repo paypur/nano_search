@@ -1,8 +1,7 @@
-use std::cell::RefCell;
 use std::cmp::min;
 use std::fmt::{Display};
-use std::rc::Rc;
 use std::slice::Iter;
+use std::sync::{Arc, Mutex};
 use nano_search::ByteString;
 
 const CHAR_INDEX_MAP: [usize; 128] = [
@@ -26,10 +25,10 @@ const CHAR_INDEX_MAP: [usize; 128] = [
 ];
 const AUTO_COMPLETE_LIMIT: usize = 5;
 
-pub type TrieRef = Rc<RefCell<Trie>>;
+pub type TrieRef = Arc<Mutex<Trie>>;
 
-#[derive(Debug, PartialEq)]
-pub struct TrieRefEdges(Box<[Option<TrieRef>]>);
+#[derive(Debug)]
+pub struct TrieRefEdges(pub(crate) Box<[Option<TrieRef>]>);
 
 impl TrieRefEdges {
     pub fn new() -> Self {
@@ -52,7 +51,7 @@ impl TrieRefEdges {
         self.0.iter()
             .flatten()
             .for_each(|tr| {
-                let hash = self.hash(tr.borrow().values[0], new_vec.len());
+                let hash = self.hash(tr.lock().unwrap().values[0], new_vec.len());
                 // all these existing values should not collide
                 new_vec[hash] = Some(tr.clone());
             }
@@ -68,7 +67,7 @@ impl TrieRefEdges {
 
         let hash = self.hash(char, self.0.len());
         if let Some(tr) = self.0.get(hash).unwrap() {
-            return tr.borrow().values[0] == char;
+            return tr.lock().unwrap().values[0] == char;
         }
 
         false
@@ -79,7 +78,7 @@ impl TrieRefEdges {
             self.reallocate();
         }
 
-        let c = trie.borrow().values[0];
+        let c = trie.lock().unwrap().values[0];
         let hash = self.hash(c, self.0.len());
 
         match &self.0[hash] {
@@ -88,7 +87,7 @@ impl TrieRefEdges {
                 self.0[hash] = Some(trie);
             },
             Some(tr) => {
-                if tr.borrow().values[0] != c {
+                if tr.lock().unwrap().values[0] != c {
                     // println!("Collision between {} and {}", tr.borrow().values, char::from(c));
                     // collision
                     self.reallocate();
@@ -116,7 +115,7 @@ impl TrieRefEdges {
 
         let hash = self.hash(char, self.0.len());
         if let Some(tr) = self.0.get(hash).unwrap() {
-            if tr.borrow().values[0] == char {
+            if tr.lock().unwrap().values[0] == char {
                 return Some(tr.clone());
             }
         }
@@ -146,7 +145,7 @@ impl Display for TrieRefEdges {
         self.iter().for_each(|o| {
             match o {
                 None => write!(f, "  {}:None\n", count).unwrap(),
-                Some(tr) => write!(f, "  {}:{}\n", count, tr.borrow()).unwrap(),
+                Some(tr) => write!(f, "  {}:{}\n", count, tr.lock().unwrap()).unwrap(),
             }
             count += 1;
         });
@@ -163,7 +162,7 @@ pub struct TrieMatch {
 }
 
 // no 0 2 l v
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub struct Trie {
     // edges keys are prefix free
     pub edges: TrieRefEdges,
@@ -201,8 +200,8 @@ impl Trie {
         }
     }
 
-    pub fn rc(word: &[u8]) -> TrieRef {
-        Rc::new(RefCell::new(Trie::from(word)))
+    pub fn new_arc(word: &[u8]) -> TrieRef {
+        Arc::new(Mutex::new(Trie::from(word)))
     }
 
     pub fn full_tree(&self) -> Vec<String> {
@@ -217,7 +216,7 @@ impl Trie {
                     .flat_map(|tr| {
                         tr.as_ref()
                             .unwrap()
-                            .borrow()
+                            .lock().unwrap()
                             .full_tree()
                             .into_iter()
                             .map(|string| {
@@ -236,7 +235,7 @@ impl Trie {
         let mut target: Option<TrieMatch> = None;
 
         if let Some(trie) = self.edges.get(word[0]) {
-            let byte_string = &trie.borrow().values;
+            let byte_string = &trie.lock().unwrap().values;
             for i in 1..=min(word.len(), byte_string.len()) {
                 if word[0..i] != byte_string[0..i] {
                     break;
@@ -260,33 +259,33 @@ impl Trie {
             // no match
             None => {
                 // insert whole vec
-                let trie = Trie::rc(&word);
-                trie.borrow_mut().is_terminal = true;
+                let trie = Trie::new_arc(&word);
+                trie.lock().unwrap().is_terminal = true;
                 self.edges.insert(trie);
             }
             Some(wrap) => {
-                if wrap.len == wrap.trie.as_ref().borrow().values.len() {
+                if wrap.len == wrap.trie.as_ref().lock().unwrap().values.len() {
                     wrap.trie.as_ref()
-                        .borrow_mut()
+                        .lock().unwrap()
                         .build(&word[wrap.len..]);
                 } else {
                     // partial match
-                    self.edges.remove(wrap.trie.borrow().values[0]);
+                    self.edges.remove(wrap.trie.lock().unwrap().values[0]);
 
                     // direct descendant
-                    let trie_ref_prefix = Trie::rc(&word[0..wrap.len]);
+                    let trie_ref_prefix = Trie::new_arc(&word[0..wrap.len]);
                     self.edges.insert(trie_ref_prefix.clone());
 
                     // second descendants
                     // slice of original word
-                    let mut trie_mut_prefix = trie_ref_prefix.borrow_mut();
+                    let mut trie_mut_prefix = trie_ref_prefix.lock().unwrap();
                     trie_mut_prefix.build(&word[wrap.len..]);
 
                     // second descendants
                     // insert partially matching second trie
                     {
                         // fixes "already mutably borrowed"
-                        let mut ref_mut = wrap.trie.borrow_mut();
+                        let mut ref_mut = wrap.trie.lock().unwrap();
                         ref_mut.values = ByteString::new(&ref_mut.values[wrap.len..]);
                     }
 
@@ -296,20 +295,22 @@ impl Trie {
         }
     }
 
-    pub fn search(&self, prefix: &[u8]) -> Vec<String> {
-        let string = ByteString::string(prefix);
+    pub fn search(&self, string: &str) -> Vec<String> {
+        let pre = string.strip_prefix("nano_")
+                .expect("Address should be prefix'ed with 'nano_'!");
+
         println!("Looking for addresses with prefix \"{}\"", string);
 
-        if !prefix.is_empty() {
-            let string2 = string.clone();
-            let mut chars = string2.chars();
-            chars.next_back();
+        if pre.len() > 0 {
+            // need to remove 1 char from the right
+            // TODO: prob should be remove base value
+            let string2 = pre[0..pre.len()-1].to_string();
 
-            let base = self.find_base(&prefix);
+            let base = self.find_base(pre.as_bytes());
             if let Some(b) = &base {
                 return b.as_ref()
-                    .borrow()
-                    .auto_complete(chars.as_str().to_string()) // need to remove 1 char from the right
+                    .lock().unwrap()
+                    .auto_complete(string2)
             }
         }
 
@@ -327,8 +328,8 @@ impl Trie {
                 }
 
                 let trie = wrap.trie
-                    .as_ref()
-                    .borrow();
+                    .lock()
+                    .unwrap();
 
                 assert_eq!(&trie.values[..wrap.len], &word[..wrap.len]);
 
@@ -350,7 +351,7 @@ impl Trie {
         let mut collect_vec: Vec<String> = Vec::new();
 
         for trie_ref in self.edges.iter().filter(|x| x.is_some()) {
-            let trie = trie_ref.as_ref().unwrap().borrow();
+            let trie = trie_ref.as_ref().unwrap().lock().unwrap();
 
             let mut vec = trie.auto_complete(prefix.clone());
 

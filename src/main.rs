@@ -1,27 +1,60 @@
 mod trie;
 
+use std::sync::{Arc, Mutex};
 use heed::{Database};
 use heed::EnvOpenOptions;
 use std::error::Error;
 use heed::types::{DecodeIgnore};
 use nanopyrs::{Account};
 use nano_search::{Accounts};
-use crate::trie::{Trie};
+use crate::trie::{Trie, TrieRef};
+
+use rocket::{get, routes, State};
+
+#[get("/<string>")]
+fn search(string: &str, trie_root: &State<TrieRef>) -> String {
+    let start = chrono::offset::Local::now().timestamp_micros();
+    let guard = trie_root.lock().unwrap();
+    let vec = guard.search(string).join("\n");
+
+    println!("{}", guard.edges.0.len());
+
+    println!("Found: {}", vec);
+    println!("Finished searching in {:} micro-seconds", chrono::offset::Local::now().timestamp_micros() - start);
+
+    vec
+}
+
+#[rocket::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    let root = build_trie()?;
+
+    rocket::build()
+        .mount("/api", routes![search])
+        .manage(root)
+        .launch()
+        .await?;
+
+    Ok(())
+}
 
 // https://github.com/nanocurrency/nanodb-specification
 // https://docs.nano.org/integration-guides/the-basics/
-fn main() -> Result<(), Box<dyn Error>> {
+fn build_trie() -> Result<TrieRef, Box<dyn Error>> {
+    println!("Building Trie");
+
     let start = chrono::offset::Local::now().timestamp();
-    
+
     let env = unsafe {
         EnvOpenOptions::new()
             .max_dbs(100)
             .open("./")?
     };
-    
+
     let mut read_tx = env.read_txn()?;
-    let accounts: Database<Accounts, DecodeIgnore> = env.open_database(&mut read_tx, Some("accounts"))?.expect("accounts db should exist");
-    
+    let accounts: Database<Accounts, DecodeIgnore> = env.open_database(&mut read_tx, Some("accounts"))?
+        .expect("accounts db should exist");
+
     let mut root = Trie::new();
     let mut count = 0;
     for result in accounts.iter(&read_tx)? {
@@ -35,6 +68,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         .strip_prefix("nano_")
                         .unwrap()
                         .as_bytes()
+                        // TODO: need to recalculate still
                         [0..52] // drop 8 char checksum
                 );
                 count += 1;
@@ -45,18 +79,15 @@ fn main() -> Result<(), Box<dyn Error>> {
             Err(_) => {}
         }
     }
-    
+
     read_tx.commit()?;
-    
     println!("Finished building trie with {:} addresses in {:} seconds", count, chrono::offset::Local::now().timestamp() - start);
 
-    let look = chrono::offset::Local::now().timestamp_micros();
+    // let look = chrono::offset::Local::now().timestamp_micros();
+    // println!("{}", root.search(b"1pay").join("\n"));
+    // println!("Finished searching in {:} micro-seconds", chrono::offset::Local::now().timestamp_micros() - look);
 
-    println!("{}", root.search(b"1pay").join("\n"));
-
-    println!("Finished searching in {:} micro-seconds", chrono::offset::Local::now().timestamp_micros() - look);
-
-    Ok(())
+    Ok(Arc::new(Mutex::new(root)))
 }
 
 // Main net test
@@ -122,12 +153,12 @@ mod tests {
         e2.sort_by(|a, b| a.cmp(&b));
         e3.sort_by(|a, b| a.cmp(&b));
     
-        let mut r1 = root.search(b"1111");
-        let mut r2 = root.search(b"31");
-        let mut r3 = root.search(b"3bc");
-        let r4 = root.search(b"a");
-        let r5 = root.search(b"");
-        let r6 = root.search(b"2x");
+        let mut r1 = root.search("nano_1111");
+        let mut r2 = root.search("nano_31");
+        let mut r3 = root.search("nano_3bc");
+        let r4 = root.search("nano_a");
+        let r5 = root.search("nano_");
+        let r6 = root.search("nano_2x");
 
         r1.sort_by(|a, b| a.cmp(&b));
         r2.sort_by(|a, b| a.cmp(&b));
