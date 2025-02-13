@@ -1,5 +1,6 @@
 use std::cmp::min;
 use std::fmt::{Display};
+use std::ops::Add;
 use std::slice::Iter;
 use std::sync::{Arc, Mutex};
 use nano_search::ByteString;
@@ -58,19 +59,6 @@ impl TrieRefEdges {
         );
 
         self.0 = new_vec.into_boxed_slice();
-    }
-
-    pub fn contains(&self, char: u8) -> bool {
-        if self.0.len() == 0 {
-            return false;
-        }
-
-        let hash = self.hash(char, self.0.len());
-        if let Some(tr) = self.0.get(hash).unwrap() {
-            return tr.lock().unwrap().values[0] == char;
-        }
-
-        false
     }
 
     pub fn insert(&mut self, trie: TrieRef) {
@@ -308,9 +296,16 @@ impl Trie {
 
             let base = self.find_base(pre.as_bytes());
             if let Some(b) = &base {
-                return b.as_ref()
+                let mut results = b.as_ref()
                     .lock().unwrap()
-                    .auto_complete(string2)
+                    .auto_complete(string2);
+
+                for i in 0..results.len() {
+                    let string = results[i].as_str();
+                    results[i] = String::from("nano_").add(&string);
+                }
+
+                return results;
             }
         }
 

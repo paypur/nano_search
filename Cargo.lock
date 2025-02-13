@@ -1057,6 +1057,7 @@ dependencies = [
  "chrono",
  "heed",
  "nanopyrs",
+ "regex",
  "rocket",
 ]
 

@@ -6,23 +6,34 @@ use heed::EnvOpenOptions;
 use std::error::Error;
 use heed::types::{DecodeIgnore};
 use nanopyrs::{Account};
-use nano_search::{Accounts};
+use regex::Regex;
+use nano_search::{Accounts, ByteString};
 use crate::trie::{Trie, TrieRef};
 
 use rocket::{get, routes, State};
+use rocket::tokio::join;
 
 #[get("/<string>")]
 fn search(string: &str, trie_root: &State<TrieRef>) -> String {
     let start = chrono::offset::Local::now().timestamp_micros();
+
+    let regex  = Regex::new(r"^nano_[13][13456789abcdefghijkmnopqrstuwxyz]{0,59}$")
+        .expect("regex invalid");
+
+    if let None = regex.captures(string) {
+        return String::from("{\n  \"error\": {\n    \"code\": 422,\n    \"message\": \"invalid request\"\n  }\n}");
+    }
+
     let guard = trie_root.lock().unwrap();
-    let vec = guard.search(string).join("\n");
+    let vec = guard.search(string);
 
-    println!("{}", guard.edges.0.len());
+    if vec.len() == 0 {
+        println!("Found: nothing :( in {:} micro-seconds.", chrono::offset::Local::now().timestamp_micros() - start);
+        return String::from("{\n  \"data\": {\n    \"addresses\": []\n  }\n}");
+    }
 
-    println!("Found: {}", vec);
-    println!("Finished searching in {:} micro-seconds", chrono::offset::Local::now().timestamp_micros() - start);
-
-    vec
+    println!("Found: [{}] in {:} micro-seconds.", vec.join(", "), chrono::offset::Local::now().timestamp_micros() - start);
+    format!("{{\n  \"data\": {{\n    \"addresses\": [\n      {}\n    ]\n  }}\n}}", vec.join(",\n      "))
 }
 
 #[rocket::main]
@@ -68,11 +79,9 @@ fn build_trie() -> Result<TrieRef, Box<dyn Error>> {
                         .strip_prefix("nano_")
                         .unwrap()
                         .as_bytes()
-                        // TODO: need to recalculate still
-                        [0..52] // drop 8 char checksum
                 );
                 count += 1;
-                if count % 100000 == 0 {
+                if count % 1000000 == 0 {
                     println!("{}", count);
                 }
             }
@@ -81,11 +90,7 @@ fn build_trie() -> Result<TrieRef, Box<dyn Error>> {
     }
 
     read_tx.commit()?;
-    println!("Finished building trie with {:} addresses in {:} seconds", count, chrono::offset::Local::now().timestamp() - start);
-
-    // let look = chrono::offset::Local::now().timestamp_micros();
-    // println!("{}", root.search(b"1pay").join("\n"));
-    // println!("Finished searching in {:} micro-seconds", chrono::offset::Local::now().timestamp_micros() - look);
+    println!("Finished building trie with {:} addresses in {:} seconds.", count, chrono::offset::Local::now().timestamp() - start);
 
     Ok(Arc::new(Mutex::new(root)))
 }
@@ -134,7 +139,7 @@ mod tests {
                     root.build(
                         &acc.account
                             .strip_prefix("nano_")
-                            .expect("Address should prefix with 'nano_'!")
+                            .expect("Address should prefixed with 'nano_'!")
                             .as_bytes()
                             [0..52] // drop 8 char checksum
                     );
@@ -145,9 +150,9 @@ mod tests {
 
         read_tx.commit()?;
         
-        let mut e1: Vec<String> = vec!["11114w1fcd1suigthy87ymi5rqo3sky7fqkbjpdih5han5tp83tb".to_string(), "11116yqsgoxg67cpbabzdqq3tc3s3cmnxpt7cb3b77sb6ddj3ztn".to_string(), "1111gasqh5tfpi7ndj4qr847jnzcrhbcnq9rt71e7yfx4ucsbhih".to_string(), "1111j7m4pgxikpd9ngzyae3hnz19x8h7ouconc81dwzqrpackhys".to_string(), "1111nm1crbdkh1xx1nmkf976s6exnaery8ripbytpnxorz4mgss6".to_string()];
-        let mut e2: Vec<String> = vec!["31114nprjd6y8kt8xihr5irkudufxwbarybmbj73hpjnyj3ok5rc".to_string(), "31114csst1h94diax547k11so3ojiwn6g8osp48wh5mhzgirzi1r".to_string(), "31116mh6pajix5zc1rpg3xy1t5jdb1wz3u4joqu1nq1fk3kup9pu".to_string(), "31116hrcowsegst8jxkidqjqi1kza5bisbh1yni575cyi5eowein".to_string(), "31118fqe53bteho64ome7k1sznb1qpwuokqumb56sdfmch8zxfc7".to_string()];
-        let mut e3: Vec<String> = vec!["3bc11asob97osigir7na3k117znhgzh5bcyqm5srpgtgqibdqfm4".to_string(), "3bc13wjf9awysqgkdgzf5diduy89srbxkdd6trcb3hd3scw1edea".to_string(), "3bc138ebwudk89hu3k5dxghs59y6u5mjpwurjrfmyasj46r78bfs".to_string(), "3bc14emf3bwgfyoba4bsmk9hij11em9yaff9rbjni97fz3txqu7u".to_string(), "3bc144nkhfdiiis5oxuy8jyg54gywryxuc1sf7p1w5jioechntsa".to_string()];
+        let mut e1: Vec<String> = vec!["nano_11114w1fcd1suigthy87ymi5rqo3sky7fqkbjpdih5han5tp83tb4hoxgmy4".to_string(), "nano_11116yqsgoxg67cpbabzdqq3tc3s3cmnxpt7cb3b77sb6ddj3ztnfqq4ygkp".to_string(), "nano_1111gasqh5tfpi7ndj4qr847jnzcrhbcnq9rt71e7yfx4ucsbhihd3cxo68t".to_string(), "nano_1111j7m4pgxikpd9ngzyae3hnz19x8h7ouconc81dwzqrpackhysqyfouzxq".to_string(), "nano_1111nm1crbdkh1xx1nmkf976s6exnaery8ripbytpnxorz4mgss67pmgf88s".to_string()];
+        let mut e2: Vec<String> = vec!["nano_31114csst1h94diax547k11so3ojiwn6g8osp48wh5mhzgirzi1rz8z1e1ms".to_string(), "nano_31114nprjd6y8kt8xihr5irkudufxwbarybmbj73hpjnyj3ok5rcqer1rc1f".to_string(), "nano_31116hrcowsegst8jxkidqjqi1kza5bisbh1yni575cyi5eowein5ycgew4t".to_string(), "nano_31116mh6pajix5zc1rpg3xy1t5jdb1wz3u4joqu1nq1fk3kup9pu39qbnhi7".to_string(), "nano_31118fqe53bteho64ome7k1sznb1qpwuokqumb56sdfmch8zxfc7wioxpjcc".to_string()];
+        let mut e3: Vec<String> = vec!["nano_3bc11asob97osigir7na3k117znhgzh5bcyqm5srpgtgqibdqfm4wjyd4g4p".to_string(), "nano_3bc138ebwudk89hu3k5dxghs59y6u5mjpwurjrfmyasj46r78bfs79cgncw4".to_string(), "nano_3bc13wjf9awysqgkdgzf5diduy89srbxkdd6trcb3hd3scw1edea8dtmrjih".to_string(), "nano_3bc144nkhfdiiis5oxuy8jyg54gywryxuc1sf7p1w5jioechntsaprfxkffy".to_string(), "nano_3bc14emf3bwgfyoba4bsmk9hij11em9yaff9rbjni97fz3txqu7u631h5git".to_string()];
     
         e1.sort_by(|a, b| a.cmp(&b));
         e2.sort_by(|a, b| a.cmp(&b));
