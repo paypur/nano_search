@@ -17,7 +17,7 @@ use rocket::tokio::join;
 fn search(string: &str, trie_root: &State<TrieRef>) -> String {
     let start = chrono::offset::Local::now().timestamp_micros();
 
-    let regex  = Regex::new(r"^nano_[13][13456789abcdefghijkmnopqrstuwxyz]{0,59}$")
+    let regex  = Regex::new(r"^(nano_)?[13][13456789abcdefghijkmnopqrstuwxyz]{0,59}$")
         .expect("regex invalid");
 
     if let None = regex.captures(string) {
@@ -33,7 +33,8 @@ fn search(string: &str, trie_root: &State<TrieRef>) -> String {
     }
 
     println!("Found: [{}] in {:} micro-seconds.", vec.join(", "), chrono::offset::Local::now().timestamp_micros() - start);
-    format!("{{\n  \"data\": {{\n    \"addresses\": [\n      {}\n    ]\n  }}\n}}", vec.join(",\n      "))
+    let json_vec = vec.iter().map(|s| format!("      \"{}\"", s)).collect::<Vec<String>>().join(",\n");
+    format!("{{\n  \"data\": {{\n    \"addresses\": [\n{}\n    ]\n  }}\n}}", json_vec)
 }
 
 #[rocket::main]
