@@ -7,11 +7,10 @@ use std::error::Error;
 use heed::types::{DecodeIgnore};
 use nanopyrs::{Account};
 use regex::Regex;
-use nano_search::{Accounts, ByteString};
+use nano_search::{Accounts};
 use crate::trie::{Trie, TrieRef};
 
 use rocket::{get, routes, State};
-use rocket::tokio::join;
 
 #[get("/<string>")]
 fn search(string: &str, trie_root: &State<TrieRef>) -> String {

@@ -285,7 +285,7 @@ impl Trie {
 
     pub fn search(&self, string: &str) -> Vec<String> {
         let pre = string.strip_prefix("nano_")
-                .expect("Address should be prefix'ed with 'nano_'!");
+            .unwrap_or_else(|| string);
 
         println!("Looking for addresses with prefix \"{}\"", string);
 
@@ -336,6 +336,10 @@ impl Trie {
         }
     }
 
+    // TODO: doesnt find everything
+    // mainnet
+    // 1pay only 1
+    // 1payp 5 results
     fn auto_complete(&self, mut prefix: String) -> Vec<String> {
         prefix.push_str(&self.values.iter().map(|x| char::from(*x)).collect::<String>());
 
