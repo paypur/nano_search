@@ -220,6 +220,8 @@ impl Trie {
     }
 
     fn find_partial_match(&self, word: &[u8]) -> Option<TrieMatch> {
+        assert!(word.len() > 0);
+
         let mut target: Option<TrieMatch> = None;
 
         if let Some(trie) = self.edges.get(word[0]) {

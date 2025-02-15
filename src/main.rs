@@ -1,16 +1,24 @@
+use std::collections::VecDeque;
+use rocket::futures::StreamExt;
+use std::iter::Iterator;
 mod trie;
 
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
 use heed::{Database};
 use heed::EnvOpenOptions;
 use std::error::Error;
+use std::thread;
 use heed::types::{DecodeIgnore};
+use http::Uri;
 use nanopyrs::{Account};
 use regex::Regex;
-use nano_search::{Accounts};
+use nano_search::{Accounts, ByteString};
 use crate::trie::{Trie, TrieRef};
 
 use rocket::{get, routes, State};
+use rocket::futures::SinkExt;
+use serde_json::Value;
+use tokio_websockets::{ClientBuilder, Message};
 
 #[get("/<string>")]
 fn search(string: &str, trie_root: &State<TrieRef>) -> String {
@@ -38,7 +46,69 @@ fn search(string: &str, trie_root: &State<TrieRef>) -> String {
 
 #[rocket::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let root = build_trie()?;
+    let root = Trie::new_arc(&[]);
+    let building = Arc::new(Mutex::new(true));
+    let back_log =  Arc::new(Mutex::new(VecDeque::<ByteString>::new()));
+
+    let root_2 = root.clone();
+    let building_2 = building.clone();
+    let back_log_2 = back_log.clone();
+
+    let jh = tokio::spawn(async move {
+        println!("Starting ws thread");
+
+        let uri = Uri::from_static("wss://nodews.hansenjc.com");
+        // TODO: ws will probably fail sometimes
+        let (mut client, r) = ClientBuilder::from_uri(uri)
+            .connect()
+            .await
+            .unwrap();
+        client.send(Message::text(r#"{"action":"subscribe","topic":"confirmation"}"#))
+            .await
+            .unwrap();
+
+        while let Some(item) = client.next().await {
+            if let Ok(msg) = item {
+                let val: Value = serde_json::from_str(msg.as_text().unwrap()).unwrap();
+                let addr = ByteString::new(
+                    val["message"]["account"]
+                    .as_str()
+                    .unwrap()
+                    .strip_prefix("nano_")
+                    .unwrap()
+                    .as_bytes()
+                );
+
+                println!("ws: {}", addr);
+
+                if *building_2.lock().unwrap() {
+                    back_log_2.lock()
+                        .unwrap()
+                        .push_back(addr);
+                } else {
+                    println!("thread: building");
+                    root_2.lock()
+                        .unwrap()
+                        .build(&addr);
+                }
+            }
+        }
+    });
+
+    build_trie(root.clone())?;
+
+    { *building.lock().unwrap() = false; }
+
+    {
+        println!("l: {}", back_log.lock().unwrap().len());
+    }
+
+    for addr in back_log.lock().unwrap().iter() {
+        println!("inserting addr");
+        root.lock()
+            .unwrap()
+            .build(&addr);
+    }
 
     rocket::build()
         .mount("/api", routes![search])
@@ -46,12 +116,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .launch()
         .await?;
 
+    // TODO: switch socket to add to trie
+    // TODO: and add all backlog
+    // back_log.pop()
+
     Ok(())
 }
 
 // https://github.com/nanocurrency/nanodb-specification
 // https://docs.nano.org/integration-guides/the-basics/
-fn build_trie() -> Result<TrieRef, Box<dyn Error>> {
+fn build_trie(root: TrieRef) -> Result<(), Box<dyn Error>> {
     println!("Building Trie");
 
     let start = chrono::offset::Local::now().timestamp();
@@ -66,7 +140,6 @@ fn build_trie() -> Result<TrieRef, Box<dyn Error>> {
     let accounts: Database<Accounts, DecodeIgnore> = env.open_database(&mut read_tx, Some("accounts"))?
         .expect("accounts db should exist");
 
-    let mut root = Trie::new();
     let mut count = 0;
     for result in accounts.iter(&read_tx)? {
         // public key
@@ -74,14 +147,17 @@ fn build_trie() -> Result<TrieRef, Box<dyn Error>> {
         match Account::from_bytes(accounts_key) {
             Ok(acc) => {
                 // println!("{}", acc.account);
-                root.build(
+                root.lock()
+                    .unwrap()
+                    .build(
                     &acc.account
                         .strip_prefix("nano_")
                         .unwrap()
                         .as_bytes()
                 );
                 count += 1;
-                if count % 1000000 == 0 {
+                if count == 100000 {
+                    break;
                     println!("{}", count);
                 }
             }
@@ -92,7 +168,7 @@ fn build_trie() -> Result<TrieRef, Box<dyn Error>> {
     read_tx.commit()?;
     println!("Finished building trie with {:} addresses in {:} seconds.", count, chrono::offset::Local::now().timestamp() - start);
 
-    Ok(Arc::new(Mutex::new(root)))
+    Ok(())
 }
 
 // Main net test

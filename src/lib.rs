@@ -1,4 +1,6 @@
+use std::cell::Ref;
 use std::fmt::Display;
+use std::ops::Deref;
 use heed::{BoxedError, BytesDecode};
 
 pub struct Accounts(pub [u8; 32]);
@@ -35,6 +37,13 @@ impl ByteString {
 
     pub fn iter(&self) -> std::slice::Iter<u8> {
         self.0.iter()
+    }
+}
+
+impl Deref for ByteString {
+    type Target = [u8];
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
