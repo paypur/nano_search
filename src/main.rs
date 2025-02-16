@@ -17,6 +17,7 @@ use crate::trie::{Trie, TrieRef};
 
 use rocket::{get, routes, State};
 use rocket::futures::SinkExt;
+use rocket::log::private::{debug, info};
 use serde_json::Value;
 use tokio_websockets::{ClientBuilder, Message};
 
@@ -35,31 +36,27 @@ fn search(string: &str, trie_root: &State<TrieRef>) -> String {
     let vec = guard.search(string);
 
     if vec.len() == 0 {
-        println!("Found: nothing :( in {:} micro-seconds.", chrono::offset::Local::now().timestamp_micros() - start);
+        info!("Found: nothing :( in {:} micro-seconds.", chrono::offset::Local::now().timestamp_micros() - start);
         return String::from("{\n  \"data\": {\n    \"addresses\": []\n  }\n}");
     }
 
-    println!("Found: [{}] in {:} micro-seconds.", vec.join(", "), chrono::offset::Local::now().timestamp_micros() - start);
-    let json_vec = vec.iter().map(|s| format!("      \"{}\"", s)).collect::<Vec<String>>().join(",\n");
-    format!("{{\n  \"data\": {{\n    \"addresses\": [\n{}\n    ]\n  }}\n}}", json_vec)
+    info!("Found: [{}] in {:} micro-seconds.", vec.join(", "), chrono::offset::Local::now().timestamp_micros() - start);
+    format!("{{\n  \"data\": {{\n    \"addresses\": [\n{}\n    ]\n  }}\n}}", vec.iter().map(|s| format!("      \"{}\"", s)).collect::<Vec<String>>().join(",\n"))
 }
 
 #[rocket::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let root = Trie::new_arc(&[]);
-    let building = Arc::new(Mutex::new(true));
-    let back_log =  Arc::new(Mutex::new(VecDeque::<ByteString>::new()));
+    env_logger::init();
 
+    let root = Arc::new(Mutex::new(Trie::new()));
     let root_2 = root.clone();
-    let building_2 = building.clone();
-    let back_log_2 = back_log.clone();
 
     let jh = tokio::spawn(async move {
-        println!("Starting ws thread");
+        info!("Starting ws thread");
 
         let uri = Uri::from_static("wss://nodews.hansenjc.com");
         // TODO: ws will probably fail sometimes
-        let (mut client, r) = ClientBuilder::from_uri(uri)
+        let (mut client, _) = ClientBuilder::from_uri(uri)
             .connect()
             .await
             .unwrap();
@@ -70,45 +67,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
         while let Some(item) = client.next().await {
             if let Ok(msg) = item {
                 let val: Value = serde_json::from_str(msg.as_text().unwrap()).unwrap();
+                if val["message"]["block"]["type"].as_str().unwrap() != "open" {
+                    break;
+                }
                 let addr = ByteString::new(
-                    val["message"]["account"]
+                    val["account"]
                     .as_str()
                     .unwrap()
                     .strip_prefix("nano_")
                     .unwrap()
                     .as_bytes()
                 );
-
-                println!("ws: {}", addr);
-
-                if *building_2.lock().unwrap() {
-                    back_log_2.lock()
-                        .unwrap()
-                        .push_back(addr);
-                } else {
-                    println!("thread: building");
-                    root_2.lock()
-                        .unwrap()
-                        .build(&addr);
-                }
+                info!("WS: new account opened {}", addr);
+                root_2.lock()
+                    .unwrap()
+                    .build(&addr);
             }
         }
     });
 
-    build_trie(root.clone())?;
-
-    { *building.lock().unwrap() = false; }
-
-    {
-        println!("l: {}", back_log.lock().unwrap().len());
-    }
-
-    for addr in back_log.lock().unwrap().iter() {
-        println!("inserting addr");
-        root.lock()
-            .unwrap()
-            .build(&addr);
-    }
+    build_trie_from_db(root.clone())?;
 
     rocket::build()
         .mount("/api", routes![search])
@@ -116,17 +94,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .launch()
         .await?;
 
-    // TODO: switch socket to add to trie
-    // TODO: and add all backlog
-    // back_log.pop()
-
     Ok(())
 }
 
 // https://github.com/nanocurrency/nanodb-specification
 // https://docs.nano.org/integration-guides/the-basics/
-fn build_trie(root: TrieRef) -> Result<(), Box<dyn Error>> {
-    println!("Building Trie");
+fn build_trie_from_db(root: TrieRef) -> Result<(), Box<dyn Error>> {
+    info!("Building Trie");
 
     let start = chrono::offset::Local::now().timestamp();
 
@@ -156,9 +130,8 @@ fn build_trie(root: TrieRef) -> Result<(), Box<dyn Error>> {
                         .as_bytes()
                 );
                 count += 1;
-                if count == 100000 {
-                    break;
-                    println!("{}", count);
+                if count % 100000 == 0{
+                    info!("trie size: {}", count);
                 }
             }
             Err(_) => {}
@@ -166,7 +139,7 @@ fn build_trie(root: TrieRef) -> Result<(), Box<dyn Error>> {
     }
 
     read_tx.commit()?;
-    println!("Finished building trie with {:} addresses in {:} seconds.", count, chrono::offset::Local::now().timestamp() - start);
+    info!("Finished building trie with {:} addresses in {:} seconds.", count, chrono::offset::Local::now().timestamp() - start);
 
     Ok(())
 }

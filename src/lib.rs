@@ -28,7 +28,7 @@ impl ByteString {
     }
 
     pub fn to_string(&self) -> String {
-        self.iter().map(|x| char::from(*x)).collect::<String>()
+           Self::string(&self)
     }
 
     pub fn len(&self) -> usize {

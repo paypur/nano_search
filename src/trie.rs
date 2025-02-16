@@ -3,6 +3,7 @@ use std::fmt::{Display};
 use std::ops::Add;
 use std::slice::Iter;
 use std::sync::{Arc, Mutex};
+use rocket::log::private::{info, log, warn, Level};
 use nano_search::ByteString;
 
 const CHAR_INDEX_MAP: [usize; 128] = [
@@ -177,10 +178,10 @@ impl Display for Trie {
 
 impl Trie {
     pub fn new() -> Self {
-        Self::from(&[])
+        Self::bytes(&[])
     }
 
-    pub fn from(word: &[u8]) -> Self {
+    pub fn bytes(word: &[u8]) -> Self {
         Trie {
             edges: TrieRefEdges::new(),
             values: ByteString::new(word),
@@ -188,8 +189,8 @@ impl Trie {
         }
     }
 
-    pub fn new_arc(word: &[u8]) -> TrieRef {
-        Arc::new(Mutex::new(Trie::from(word)))
+    pub fn bytes_arc(word: &[u8]) -> TrieRef {
+        Arc::new(Mutex::new(Trie::bytes(word)))
     }
 
     pub fn full_tree(&self) -> Vec<String> {
@@ -245,16 +246,21 @@ impl Trie {
     }
 
     pub fn build(&mut self, word: &[u8]) {
-        match self.find_partial_match(word) {
+        let option = self.find_partial_match(word);
+        match option {
             // no match
             None => {
                 // insert whole vec
-                let trie = Trie::new_arc(&word);
+                let trie = Trie::bytes_arc(&word);
                 trie.lock().unwrap().is_terminal = true;
                 self.edges.insert(trie);
             }
             Some(wrap) => {
                 if wrap.len == wrap.trie.as_ref().lock().unwrap().values.len() {
+                    if word.len() == wrap.len {
+                        warn!("Tried to insert existing address: {}", ByteString::string(word));
+                        return;
+                    }
                     wrap.trie.as_ref()
                         .lock().unwrap()
                         .build(&word[wrap.len..]);
@@ -263,7 +269,7 @@ impl Trie {
                     self.edges.remove(wrap.trie.lock().unwrap().values[0]);
 
                     // direct descendant
-                    let trie_ref_prefix = Trie::new_arc(&word[0..wrap.len]);
+                    let trie_ref_prefix = Trie::bytes_arc(&word[0..wrap.len]);
                     self.edges.insert(trie_ref_prefix.clone());
 
                     // second descendants
@@ -289,7 +295,7 @@ impl Trie {
         let pre = string.strip_prefix("nano_")
             .unwrap_or_else(|| string);
 
-        println!("Looking for addresses with prefix \"{}\"", string);
+        info!("Looking for addresses with prefix \"{}\"", string);
 
         if pre.len() > 0 {
             // need to remove 1 char from the right
