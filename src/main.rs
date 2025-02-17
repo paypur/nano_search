@@ -8,11 +8,14 @@ use heed::{Database};
 use heed::EnvOpenOptions;
 use std::error::Error;
 use std::thread;
+use curve25519_dalek::edwards::CompressedEdwardsY;
+use heed::byteorder::LittleEndian;
 use heed::types::{DecodeIgnore};
 use http::Uri;
-use nanopyrs::{Account};
+use nanopyrs::{base32, Account, NanoError};
+use nanopyrs::hashes::blake2b_checksum;
 use regex::Regex;
-use nano_search::{Accounts, ByteString};
+use nano_search::{AccountsKey, AccountsValue, ByteString, Bytes128};
 use crate::trie::{Trie, TrieRef};
 
 use rocket::{get, routes, State};
@@ -48,6 +51,10 @@ fn search(string: &str, trie_root: &State<TrieRef>) -> String {
 async fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
 
+    // my account
+    // let k: Vec<u8> = vec!(89, 30, 182, 240, 20, 180, 245, 71, 52, 150, 170, 98, 117, 216, 201, 67, 17, 240, 75, 30, 7, 90, 110, 96, 183, 247, 135, 58, 37, 227, 35, 119);
+    // let v: Vec<u8> = vec!(102, 4, 2, 172, 11, 40, 167, 207, 12, 180, 11, 255, 19, 213, 195, 180, 134, 189, 50, 204, 135, 246, 133, 155, 22, 146, 76, 10, 105, 245, 97, 128, 15, 244, 212, 68, 131, 96, 137, 148, 30, 200, 20, 198, 84, 60, 8, 185, 67, 229, 51, 36, 80, 14, 179, 168, 102, 26, 50, 216, 112, 43, 191, 5, 112, 83, 100, 57, 82, 69, 114, 8, 205, 162, 175, 168, 243, 183, 188, 3, 11, 215, 200, 12, 163, 61, 27, 166, 161, 183, 138, 178, 231, 111, 33, 250, 0, 0, 92, 24, 47, 111, 119, 253, 43, 161, 175, 37, 248, 135, 104, 105, 156, 153, 233, 102, 0, 0, 0, 0, 49, 2, 0, 0, 0, 0, 0, 0);
+
     let root = Arc::new(Mutex::new(Trie::new()));
     let root_2 = root.clone();
 
@@ -67,6 +74,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         while let Some(item) = client.next().await {
             if let Ok(msg) = item {
                 let val: Value = serde_json::from_str(msg.as_text().unwrap()).unwrap();
+                // TODO: wrong, should be subtype
                 if val["message"]["block"]["type"].as_str().unwrap() != "open" {
                     break;
                 }
@@ -111,16 +119,20 @@ fn build_trie_from_db(root: TrieRef) -> Result<(), Box<dyn Error>> {
     };
 
     let mut read_tx = env.read_txn()?;
-    let accounts: Database<Accounts, DecodeIgnore> = env.open_database(&mut read_tx, Some("accounts"))?
+    let accounts: Database<AccountsKey, Bytes128> = env.open_database(&mut read_tx, Some("accounts"))?
         .expect("accounts db should exist");
 
     let mut count = 0;
     for result in accounts.iter(&read_tx)? {
         // public key
-        let (accounts_key, ()) = result?;
+        let (accounts_key, accounts_value_bytes) = result?;
         match Account::from_bytes(accounts_key) {
             Ok(acc) => {
-                // println!("{}", acc.account);
+                let accounts_value = AccountsValue::from_bytes(&accounts_value_bytes);
+
+                debug!("{}", acc.account);
+                debug!("{}", accounts_value.open_block);
+
                 root.lock()
                     .unwrap()
                     .build(
@@ -130,7 +142,7 @@ fn build_trie_from_db(root: TrieRef) -> Result<(), Box<dyn Error>> {
                         .as_bytes()
                 );
                 count += 1;
-                if count % 100000 == 0{
+                if count % 100000 == 0 {
                     info!("trie size: {}", count);
                 }
             }
@@ -165,7 +177,7 @@ mod tests {
     use heed::{Database, EnvOpenOptions};
     use heed::types::DecodeIgnore;
     use nanopyrs::Account;
-    use nano_search::Accounts;
+    use nano_search::AccountsKey;
     use crate::trie::Trie;
 
     #[test]
@@ -179,7 +191,7 @@ mod tests {
         };
         
         let mut read_tx = env.read_txn()?;
-        let accounts: Database<Accounts, DecodeIgnore> = env.open_database(&mut read_tx, Some("accounts"))?.expect("accounts db should exist");
+        let accounts: Database<AccountsKey, DecodeIgnore> = env.open_database(&mut read_tx, Some("accounts"))?.expect("accounts db should exist");
         for result in accounts.iter(&read_tx)? {
             // public key
             let (accounts_key, ()) = result?;

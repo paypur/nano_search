@@ -1177,6 +1177,7 @@ name = "nano_search"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "curve25519-dalek",
  "env_logger",
  "heed",
  "http 1.2.0",
