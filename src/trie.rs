@@ -154,7 +154,7 @@ pub struct TrieMatch {
 pub struct Trie {
     // edges keys are prefix free
     pub edges: TrieRefEdges,
-    pub values: ByteString,
+    pub values: ByteString, // TODO: what if this is a union, u8-u64 before trying to heap allocate
     pub is_terminal: bool,
 }
 
