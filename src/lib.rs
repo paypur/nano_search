@@ -131,15 +131,3 @@ impl Display for ByteString {
         Ok(())
     }
 }
-
-
-// TODO: use unsafe to access both
-union BytesN7 {
-    len: u8,
-    data: u64,
-}
-
-union BytesUnion {
-    bytes: BytesN7,
-    string: ByteString,
-}

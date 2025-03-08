@@ -1,18 +1,13 @@
-use std::collections::VecDeque;
 use rocket::futures::StreamExt;
 use std::iter::Iterator;
 mod trie;
 
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex};
 use heed::{Database};
 use heed::EnvOpenOptions;
 use std::error::Error;
-use std::thread;
-use curve25519_dalek::edwards::CompressedEdwardsY;
-use heed::byteorder::LittleEndian;
-use heed::types::{DecodeIgnore};
 use http::Uri;
-use nanopyrs::{base32, Account, NanoError};
+use nanopyrs::{Account};
 use nanopyrs::hashes::blake2b_checksum;
 use regex::Regex;
 use nano_search::{AccountsKey, AccountsValue, ByteString, Bytes128};
@@ -67,6 +62,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .connect()
             .await
             .unwrap();
+
+        // https://docs.nano.org/integration-guides/websockets/#confirmations
         client.send(Message::text(r#"{"action":"subscribe","topic":"confirmation"}"#))
             .await
             .unwrap();
@@ -74,12 +71,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         while let Some(item) = client.next().await {
             if let Ok(msg) = item {
                 let val: Value = serde_json::from_str(msg.as_text().unwrap()).unwrap();
-                // TODO: wrong, should be subtype
-                if val["message"]["block"]["type"].as_str().unwrap() != "open" {
+                if val["message"]["block"]["subtype"].as_str().unwrap() != "receive" ||
+                    val["message"]["block"]["previous"].as_str().unwrap() != "0000000000000000000000000000000000000000000000000000000000000000" {
                     break;
                 }
                 let addr = ByteString::new(
-                    val["account"]
+                    val["message"]["account"]
                     .as_str()
                     .unwrap()
                     .strip_prefix("nano_")
@@ -123,15 +120,19 @@ fn build_trie_from_db(root: TrieRef) -> Result<(), Box<dyn Error>> {
         .expect("accounts db should exist");
 
     let mut count = 0;
+    let mut total = 0;
     for result in accounts.iter(&read_tx)? {
         // public key
         let (accounts_key, accounts_value_bytes) = result?;
         match Account::from_bytes(accounts_key) {
             Ok(acc) => {
+                total += 1;
+                // debug!("{}", acc.account);
                 let accounts_value = AccountsValue::from_bytes(&accounts_value_bytes);
-
-                debug!("{}", acc.account);
-                debug!("{}", accounts_value.open_block);
+                if accounts_value.balance <= 1 {
+                    debug!("{} has 0 raw! Skipping.", acc.account);
+                    continue;
+                }
 
                 root.lock()
                     .unwrap()
@@ -141,9 +142,10 @@ fn build_trie_from_db(root: TrieRef) -> Result<(), Box<dyn Error>> {
                         .unwrap()
                         .as_bytes()
                 );
+
                 count += 1;
-                if count % 100000 == 0 {
-                    info!("trie size: {}", count);
+                if total % 1000000 == 0 {
+                    info!("Trie size: {}/{}", count, total);
                 }
             }
             Err(_) => {}
