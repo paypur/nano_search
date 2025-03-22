@@ -3,6 +3,7 @@ use std::ops::Deref;
 use heed::{BoxedError, BytesDecode};
 
 // https://docs.rs/heed/latest/heed/
+#[allow(dead_code)]
 pub struct AccountsKey([u8; 32]);
 
 impl BytesDecode<'_> for AccountsKey {
@@ -12,6 +13,7 @@ impl BytesDecode<'_> for AccountsKey {
     }
 }
 
+#[allow(dead_code)]
 pub struct Bytes128([u8; 128]);
 
 impl BytesDecode<'_> for Bytes128 {
@@ -67,7 +69,6 @@ pub struct AccountsValue {
 impl AccountsValue {
     pub fn from_bytes(bytes: &[u8]) -> Self {
         assert_eq!(bytes.len(), 128);
-        // TODO: worry about byte order for struct member order
         Self {
             head: bytes[0..32].try_into().unwrap(),
             representative: bytes[32..64].try_into().unwrap(),

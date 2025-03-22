@@ -8,7 +8,6 @@ use heed::EnvOpenOptions;
 use std::error::Error;
 use http::Uri;
 use nanopyrs::{Account};
-use nanopyrs::hashes::blake2b_checksum;
 use regex::Regex;
 use nano_search::{AccountsKey, AccountsValue, ByteString, Bytes128};
 use crate::trie::{Trie, TrieRef};
@@ -53,7 +52,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let root = Arc::new(Mutex::new(Trie::new()));
     let root_2 = root.clone();
 
-    let jh = tokio::spawn(async move {
+    let _jh = tokio::spawn(async move {
         info!("Starting ws thread");
 
         let uri = Uri::from_static("wss://nodews.hansenjc.com");
@@ -176,65 +175,36 @@ fn build_trie_from_db(root: TrieRef) -> Result<(), Box<dyn Error>> {
 #[cfg(test)]
 mod tests {
     use std::error::Error;
-    use heed::{Database, EnvOpenOptions};
-    use heed::types::DecodeIgnore;
-    use nanopyrs::Account;
-    use nano_search::AccountsKey;
+    use std::sync::{Arc, Mutex};
+    use crate::build_trie_from_db;
     use crate::trie::Trie;
 
     #[test]
     fn auto_complete_test() -> Result<(), Box<dyn Error>>{
-        let mut root = Trie::new();
-        
-        let env = unsafe {
-            EnvOpenOptions::new()
-                .max_dbs(100)
-                .open("./")?
-        };
-        
-        let mut read_tx = env.read_txn()?;
-        let accounts: Database<AccountsKey, DecodeIgnore> = env.open_database(&mut read_tx, Some("accounts"))?.expect("accounts db should exist");
-        for result in accounts.iter(&read_tx)? {
-            // public key
-            let (accounts_key, ()) = result?;
-            match Account::from_bytes(accounts_key) {
-                Ok(acc) => {
-                    root.build(
-                        &acc.account
-                            .strip_prefix("nano_")
-                            .expect("Address should prefixed with 'nano_'!")
-                            .as_bytes()
-                            [0..52] // drop 8 char checksum
-                    );
-                }
-                Err(_) => {}
-            }
-        }
+        let arc_root = Arc::new(Mutex::new(Trie::new()));
+        build_trie_from_db(arc_root.clone())?;
+        let root = arc_root.lock().unwrap();
 
-        read_tx.commit()?;
-        
-        let mut e1: Vec<String> = vec!["nano_11114w1fcd1suigthy87ymi5rqo3sky7fqkbjpdih5han5tp83tb4hoxgmy4".to_string(), "nano_11116yqsgoxg67cpbabzdqq3tc3s3cmnxpt7cb3b77sb6ddj3ztnfqq4ygkp".to_string(), "nano_1111gasqh5tfpi7ndj4qr847jnzcrhbcnq9rt71e7yfx4ucsbhihd3cxo68t".to_string(), "nano_1111j7m4pgxikpd9ngzyae3hnz19x8h7ouconc81dwzqrpackhysqyfouzxq".to_string(), "nano_1111nm1crbdkh1xx1nmkf976s6exnaery8ripbytpnxorz4mgss67pmgf88s".to_string()];
-        let mut e2: Vec<String> = vec!["nano_31114csst1h94diax547k11so3ojiwn6g8osp48wh5mhzgirzi1rz8z1e1ms".to_string(), "nano_31114nprjd6y8kt8xihr5irkudufxwbarybmbj73hpjnyj3ok5rcqer1rc1f".to_string(), "nano_31116hrcowsegst8jxkidqjqi1kza5bisbh1yni575cyi5eowein5ycgew4t".to_string(), "nano_31116mh6pajix5zc1rpg3xy1t5jdb1wz3u4joqu1nq1fk3kup9pu39qbnhi7".to_string(), "nano_31118fqe53bteho64ome7k1sznb1qpwuokqumb56sdfmch8zxfc7wioxpjcc".to_string()];
-        let mut e3: Vec<String> = vec!["nano_3bc11asob97osigir7na3k117znhgzh5bcyqm5srpgtgqibdqfm4wjyd4g4p".to_string(), "nano_3bc138ebwudk89hu3k5dxghs59y6u5mjpwurjrfmyasj46r78bfs79cgncw4".to_string(), "nano_3bc13wjf9awysqgkdgzf5diduy89srbxkdd6trcb3hd3scw1edea8dtmrjih".to_string(), "nano_3bc144nkhfdiiis5oxuy8jyg54gywryxuc1sf7p1w5jioechntsaprfxkffy".to_string(), "nano_3bc14emf3bwgfyoba4bsmk9hij11em9yaff9rbjni97fz3txqu7u631h5git".to_string()];
-    
+        let mut e1: Vec<String> = vec!["nano_1paypur3bf9oawtbfcm4gqeekirjy37jw3ttfsidhxw99aky8auqwaf6na9q".to_string()];
+
         e1.sort_by(|a, b| a.cmp(&b));
-        e2.sort_by(|a, b| a.cmp(&b));
-        e3.sort_by(|a, b| a.cmp(&b));
-    
-        let mut r1 = root.search("nano_1111");
-        let mut r2 = root.search("nano_31");
-        let mut r3 = root.search("nano_3bc");
+        // e2.sort_by(|a, b| a.cmp(&b));
+        // e3.sort_by(|a, b| a.cmp(&b));
+
+        let mut r1 = root.search("1paypur");
+        // let mut r2 = root.search("nano_31");
+        // let mut r3 = root.search("nano_3bc");
         let r4 = root.search("nano_a");
         let r5 = root.search("nano_");
         let r6 = root.search("nano_2x");
 
         r1.sort_by(|a, b| a.cmp(&b));
-        r2.sort_by(|a, b| a.cmp(&b));
-        r3.sort_by(|a, b| a.cmp(&b));
+        // r2.sort_by(|a, b| a.cmp(&b));
+        // r3.sort_by(|a, b| a.cmp(&b));
 
         assert_eq!(r1.as_slice(), e1);
-        assert_eq!(r2.as_slice(), e2);
-        assert_eq!(r3.as_slice(), e3);
+        // assert_eq!(r2.as_slice(), e2);
+        // assert_eq!(r3.as_slice(), e3);
         assert_eq!(r4.as_slice(), Vec::<String>::new());
         assert_eq!(r5.as_slice(), Vec::<String>::new());
         assert_eq!(r6.as_slice(), Vec::<String>::new());

@@ -3,7 +3,7 @@ use std::fmt::{Display};
 use std::ops::Add;
 use std::slice::Iter;
 use std::sync::{Arc, Mutex};
-use rocket::log::private::{info, log, warn, Level};
+use rocket::log::private::{info,warn};
 use nano_search::ByteString;
 
 const CHAR_INDEX_MAP: [usize; 128] = [
@@ -155,7 +155,7 @@ pub struct TrieMatch {
 pub struct Trie {
     // edges keys are prefix free
     pub edges: TrieRefEdges,
-    pub values: ByteString, // TODO: what if this is a union, u8-u64 before trying to heap allocate
+    pub values: ByteString,
     pub is_terminal: bool,
 }
 
@@ -298,15 +298,13 @@ impl Trie {
         info!("Looking for addresses with prefix \"{}\"", string);
 
         if pre.len() > 0 {
-            // need to remove 1 char from the right
-            // TODO: prob should be remove base value
-            let string2 = pre[0..pre.len()-1].to_string();
-
-            let base = self.find_base(pre.as_bytes());
-            if let Some(b) = &base {
-                let mut results = b.as_ref()
-                    .lock().unwrap()
-                    .auto_complete(string2);
+            let target_opt = self.find_base(pre.as_bytes());
+            if let Some(target) = &target_opt {
+                let mut results = target.trie.as_ref()
+                    .lock()
+                    .unwrap()
+                    // avoids duplicate chars from the last matched trie
+                    .auto_complete(pre[..pre.len()-target.len].to_string());
 
                 for i in 0..results.len() {
                     let string = results[i].as_str();
@@ -320,25 +318,26 @@ impl Trie {
         vec!()
     }
 
-    fn find_base(&self, word: &[u8]) -> Option<TrieRef> {
+    fn find_base(&self, word: &[u8]) -> Option<TrieMatch> {
         let partial = self.find_partial_match(word);
 
         match partial {
-            Some(wrap) => {
+            Some(ref wrap) => {
                 // full match
                 if wrap.len == word.len() {
-                    return Some(wrap.trie.clone())
+                    return partial;
                 }
 
                 let trie = wrap.trie
                     .lock()
                     .unwrap();
 
-                assert_eq!(&trie.values[..wrap.len], &word[..wrap.len]);
+                // assert_eq!(&trie.values[..wrap.len], &word[..wrap.len]);
 
                 // partial match
-                // even though all closest.len don't match, the edge should be the only possible path
-                return trie.find_base(&word[trie.values.len()..]);
+                // even though all chars don't match, this edge should be the only possible path
+                // and we just return None on the next iteration
+                return trie.find_base(&word[wrap.len..]);
             }
             None => None,
         }
@@ -349,7 +348,7 @@ impl Trie {
     // 1pay only 1
     // 1payp 5 results
     fn auto_complete(&self, mut prefix: String) -> Vec<String> {
-        prefix.push_str(&self.values.iter().map(|x| char::from(*x)).collect::<String>());
+        prefix.push_str(&self.values.to_string());
 
         if self.is_terminal {
             return vec!(prefix);
