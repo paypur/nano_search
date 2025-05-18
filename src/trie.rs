@@ -163,6 +163,7 @@ impl Display for Trie {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let vec = self.full_tree();
 
+        // everything
         write!(f, "{}", vec.join("\n"))?;
 
         // only direct descendants
@@ -343,10 +344,6 @@ impl Trie {
         }
     }
 
-    // TODO: doesnt find everything
-    // mainnet
-    // 1pay only 1
-    // 1payp 5 results
     fn auto_complete(&self, mut prefix: String) -> Vec<String> {
         prefix.push_str(&self.values.to_string());
 

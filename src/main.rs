@@ -1,20 +1,20 @@
 use rocket::futures::StreamExt;
 use std::iter::Iterator;
 mod trie;
+mod nano_to;
 
-use std::sync::{Arc, Mutex};
 use heed::{Database};
 use heed::EnvOpenOptions;
 use std::error::Error;
 use http::Uri;
 use nanopyrs::{Account};
-use regex::Regex;
+use regex::{Regex};
 use nano_search::{AccountsKey, AccountsValue, ByteString, Bytes128};
 use crate::trie::{Trie, TrieRef};
 
 use rocket::{get, routes, State};
 use rocket::futures::SinkExt;
-use rocket::log::private::{debug, info};
+use rocket::log::private::{debug, info, trace};
 use serde_json::Value;
 use tokio_websockets::{ClientBuilder, Message};
 
@@ -25,19 +25,21 @@ fn search(string: &str, trie_root: &State<TrieRef>) -> String {
     let regex  = Regex::new(r"^(nano_)?[13][13456789abcdefghijkmnopqrstuwxyz]{0,59}$")
         .expect("regex invalid");
 
-    if let None = regex.captures(string) {
-        return String::from("{\n  \"error\": {\n    \"code\": 422,\n    \"message\": \"invalid request\"\n  }\n}");
-    }
-
-    let guard = trie_root.lock().unwrap();
-    let vec = guard.search(string);
+    let vec = match regex.captures(string) {
+        // return String::from("{\n  \"error\": {\n    \"code\": 422,\n    \"message\": \"invalid request\"\n  }\n}");
+        None => nano_to::search(string), 
+        Some(_) => {
+            let guard = trie_root.lock().unwrap();  
+            guard.search(string)
+        }
+    };
 
     if vec.len() == 0 {
-        info!("Found: nothing :( in {:} micro-seconds.", chrono::offset::Local::now().timestamp_micros() - start);
+        debug!("Found: nothing :( in {:} micro-seconds.", chrono::offset::Local::now().timestamp_micros() - start);
         return String::from("{\n  \"data\": {\n    \"addresses\": []\n  }\n}");
     }
 
-    info!("Found: [{}] in {:} micro-seconds.", vec.join(", "), chrono::offset::Local::now().timestamp_micros() - start);
+    debug!("Found: [{}] in {:} micro-seconds.", vec.join(", "), chrono::offset::Local::now().timestamp_micros() - start);
     format!("{{\n  \"data\": {{\n    \"addresses\": [\n{}\n    ]\n  }}\n}}", vec.iter().map(|s| format!("      \"{}\"", s)).collect::<Vec<String>>().join(",\n"))
 }
 
@@ -45,28 +47,24 @@ fn search(string: &str, trie_root: &State<TrieRef>) -> String {
 async fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
 
-    // my account
-    // let k: Vec<u8> = vec!(89, 30, 182, 240, 20, 180, 245, 71, 52, 150, 170, 98, 117, 216, 201, 67, 17, 240, 75, 30, 7, 90, 110, 96, 183, 247, 135, 58, 37, 227, 35, 119);
-    // let v: Vec<u8> = vec!(102, 4, 2, 172, 11, 40, 167, 207, 12, 180, 11, 255, 19, 213, 195, 180, 134, 189, 50, 204, 135, 246, 133, 155, 22, 146, 76, 10, 105, 245, 97, 128, 15, 244, 212, 68, 131, 96, 137, 148, 30, 200, 20, 198, 84, 60, 8, 185, 67, 229, 51, 36, 80, 14, 179, 168, 102, 26, 50, 216, 112, 43, 191, 5, 112, 83, 100, 57, 82, 69, 114, 8, 205, 162, 175, 168, 243, 183, 188, 3, 11, 215, 200, 12, 163, 61, 27, 166, 161, 183, 138, 178, 231, 111, 33, 250, 0, 0, 92, 24, 47, 111, 119, 253, 43, 161, 175, 37, 248, 135, 104, 105, 156, 153, 233, 102, 0, 0, 0, 0, 49, 2, 0, 0, 0, 0, 0, 0);
-
-    let root = Arc::new(Mutex::new(Trie::new()));
-    let root_2 = root.clone();
-
-    let _jh = tokio::spawn(async move {
+    let root = Trie::bytes_arc(&[]);
+    let root_ws = root.clone();
+    
+    tokio::spawn(async move {
         info!("Starting ws thread");
-
+    
         let uri = Uri::from_static("wss://nodews.hansenjc.com");
         // TODO: ws will probably fail sometimes
         let (mut client, _) = ClientBuilder::from_uri(uri)
             .connect()
             .await
-            .unwrap();
-
+            .expect("Failed to connect to websocket!");
+    
         // https://docs.nano.org/integration-guides/websockets/#confirmations
         client.send(Message::text(r#"{"action":"subscribe","topic":"confirmation"}"#))
             .await
             .unwrap();
-
+    
         while let Some(item) = client.next().await {
             if let Ok(msg) = item {
                 let val: Value = serde_json::from_str(msg.as_text().unwrap()).unwrap();
@@ -83,7 +81,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     .as_bytes()
                 );
                 info!("WS: new account opened {}", addr);
-                root_2.lock()
+                root_ws.lock()
                     .unwrap()
                     .build(&addr);
             }
@@ -128,8 +126,8 @@ fn build_trie_from_db(root: TrieRef) -> Result<(), Box<dyn Error>> {
                 total += 1;
                 // debug!("{}", acc.account);
                 let accounts_value = AccountsValue::from_bytes(&accounts_value_bytes);
-                if accounts_value.balance <= 1 {
-                    debug!("{} has 0 raw! Skipping.", acc.account);
+                if accounts_value.balance <= 100 {
+                    trace!("{} has less than 100 raw: Skipping.", acc.account);
                     continue;
                 }
 
@@ -156,21 +154,6 @@ fn build_trie_from_db(root: TrieRef) -> Result<(), Box<dyn Error>> {
 
     Ok(())
 }
-
-// Main net test
-// Finished building trie with 36886987 addresses in 135 seconds
-// Looking for addresses with prefix "1pay"
-// 1pay131j4o7ybno9bh9ymx6dfuf5cp38fjkbcudcyhqcmbugpb3u
-// 1pay175ycu9cbupwdy3nd6f1kobm4d1a5ug9hg3thfsqrx8q4g9k
-// 1pay19xc16cuyo3w86c4rxjn7gsddoxw1qpahpy8arfuj5qaqpr1
-// 1pay1b68cd8io6qt7jiy9cu9n7fjh4fjacxi3ydfec755tr46mni
-// 1pay1bb5sjkxuycuzhis47g3z1d9nqpkqud8tecrzrp78xnqceet
-// 1pay1bs7iuiirnabzz7hsj8mzgkso9857uq4o6rwehwx9czirj9m
-// 1pay1ger4tkqwmyeqndq7zz149dmxcy1oq4tk9hzrim7x1w16ciq
-// 1pay1gen41unujxb4ced9fkagwczy7b565tfkbueyys7hk9ihbbp
-// 1pay1gm8tishb41cj4ge95miecmhczo9r18qyi5uuhiz81ccrhgh
-// 1pay1gwjcdqh76diiewiypcdsydytyq17si13kfy3biyfqhoopmu
-// Finished searching in 11 micro-seconds
 
 #[cfg(test)]
 mod tests {
