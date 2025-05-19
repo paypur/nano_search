@@ -1,8 +1,8 @@
 use std::fs::File;
 use std::path::Path;
 use git2::Repository;
-use rocket::log::private::debug;
-use serde_json::Value;
+use serde_json::map::Values;
+use serde_json::{json, Value};
 
 const REPO_PATH: &str = "~/.cache/nano_search/nano_to";
 
@@ -39,7 +39,9 @@ pub fn update() {
     }
 }
 
-pub fn search(alias: &str) -> Vec<String> {
+// TODO: not sorted
+pub fn search(alias: &str) -> Vec<Value> {
+    let repo = Repository::open(REPO_PATH).unwrap();
     // do a prefix search on the hundred or so aliases
     // can probably get away with a sequential search
     let mut vec = Vec::new();
@@ -50,12 +52,19 @@ pub fn search(alias: &str) -> Vec<String> {
     let json: Value = serde_json::from_reader(file).expect("Failed to parse known.json");
     
     for acc in json.as_array().unwrap() {
-        let addr =  acc["name"].as_str().unwrap();
-        if addr.to_ascii_lowercase().starts_with(&alias_lower) {
-            vec.push(addr.to_string());
-            if vec.len() >= 5 { break; }
+        let name = acc["name"].as_str().unwrap().to_string();
+        if name.to_ascii_lowercase().starts_with(&alias_lower) {
+            let addr = acc["address"].as_str().unwrap().to_string();
+            let val = json!({
+                "aliased": true,
+                "address": addr,
+                "name": name
+            });
+            vec.push(val);
+            if vec.len() >= 8 { break; }
         }
     }
 
     vec
+
 }

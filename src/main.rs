@@ -16,7 +16,7 @@ use crate::trie::{Trie, TrieRef};
 use rocket::{get, routes, State};
 use rocket::futures::SinkExt;
 use rocket::log::private::{debug, info, trace};
-use serde_json::Value;
+use serde_json::{json, Value};
 use tokio::time::{sleep};
 use tokio_websockets::{ClientBuilder, Message};
 
@@ -33,23 +33,39 @@ fn search(string: &str, trie_root: &State<TrieRef>) -> String {
         Some(_) => {
             let guard = trie_root.lock().unwrap();  
             guard.search(string)
+                .iter_mut()
+                .map(|x| {
+                    json!({
+                        "aliased": false,
+                        "address": x,
+                        "name": ""
+                    }
+                )})
+                .collect()
         }
     };
 
     if vec.len() == 0 {
         debug!("Found: nothing :( in {:} micro-seconds.", chrono::offset::Local::now().timestamp_micros() - start);
-        return String::from("{\n  \"data\": {\n    \"addresses\": []\n  }\n}");
+    } else {
+        // TODO: fix this
+        debug!("Found: [{}] in {:} micro-seconds.", "", chrono::offset::Local::now().timestamp_micros() - start);
     }
 
-    debug!("Found: [{}] in {:} micro-seconds.", vec.join(", "), chrono::offset::Local::now().timestamp_micros() - start);
-    format!("{{\n  \"data\": {{\n    \"addresses\": [\n{}\n    ]\n  }}\n}}", vec.iter().map(|s| format!("      \"{}\"", s)).collect::<Vec<String>>().join(",\n"))
+    serde_json::to_string_pretty(
+        &json!({
+            "data": {
+                "addresses": Value::Array(vec)
+            }
+        })
+    ).unwrap()
 }
 
 #[rocket::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
 
-    let root = Trie::bytes_arc(&[]);
+    let root = Trie::new_arc(&[]);
     let root_ws = root.clone();
 
     tokio::spawn(async move {
@@ -57,45 +73,45 @@ async fn main() -> Result<(), Box<dyn Error>> {
         nano_to::update();
     });
     
-    tokio::spawn(async move {
-        info!("Starting ws thread");
-    
-        let uri = Uri::from_static("wss://nodews.hansenjc.com");
-        // TODO: ws will probably fail sometimes
-        let (mut client, _) = ClientBuilder::from_uri(uri)
-            .connect()
-            .await
-            .expect("Failed to connect to websocket!");
-    
-        // https://docs.nano.org/integration-guides/websockets/#confirmations
-        client.send(Message::text(r#"{"action":"subscribe","topic":"confirmation"}"#))
-            .await
-            .unwrap();
-    
-        while let Some(item) = client.next().await {
-            if let Ok(msg) = item {
-                let val: Value = serde_json::from_str(msg.as_text().unwrap()).unwrap();
-                if val["message"]["block"]["subtype"].as_str().unwrap() != "receive" ||
-                    val["message"]["block"]["previous"].as_str().unwrap() != "0000000000000000000000000000000000000000000000000000000000000000" {
-                    break;
-                }
-                let addr = ByteString::new(
-                    val["message"]["account"]
-                    .as_str()
-                    .unwrap()
-                    .strip_prefix("nano_")
-                    .unwrap()
-                    .as_bytes()
-                );
-                info!("WS: new account opened {}", addr);
-                root_ws.lock()
-                    .unwrap()
-                    .build(&addr);
-            }
-        }
-    });
+    // tokio::spawn(async move {
+    //     info!("Starting ws thread");
+    // 
+    //     let uri = Uri::from_static("wss://nodews.hansenjc.com");
+    //     // TODO: ws will probably fail sometimes
+    //     let (mut client, _) = ClientBuilder::from_uri(uri)
+    //         .connect()
+    //         .await
+    //         .expect("Failed to connect to websocket!");
+    // 
+    //     // https://docs.nano.org/integration-guides/websockets/#confirmations
+    //     client.send(Message::text(r#"{"action":"subscribe","topic":"confirmation"}"#))
+    //         .await
+    //         .unwrap();
+    // 
+    //     while let Some(item) = client.next().await {
+    //         if let Ok(msg) = item {
+    //             let val: Value = serde_json::from_str(msg.as_text().unwrap()).unwrap();
+    //             if val["message"]["block"]["subtype"].as_str().unwrap() != "receive" ||
+    //                 val["message"]["block"]["previous"].as_str().unwrap() != "0000000000000000000000000000000000000000000000000000000000000000" {
+    //                 break;
+    //             }
+    //             let addr = ByteString::new(
+    //                 val["message"]["account"]
+    //                 .as_str()
+    //                 .unwrap()
+    //                 .strip_prefix("nano_")
+    //                 .unwrap()
+    //                 .as_bytes()
+    //             );
+    //             info!("WS: new account opened {}", addr);
+    //             root_ws.lock()
+    //                 .unwrap()
+    //                 .build(&addr);
+    //         }
+    //     }
+    // });
 
-    build_trie_from_db(root.clone())?;
+    // build_trie_from_db(root.clone())?;
 
     rocket::build()
         .mount("/api", routes![search])

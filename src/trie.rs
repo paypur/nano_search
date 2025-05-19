@@ -178,11 +178,7 @@ impl Display for Trie {
 }
 
 impl Trie {
-    pub fn new() -> Self {
-        Self::bytes(&[])
-    }
-
-    pub fn bytes(word: &[u8]) -> Self {
+    pub fn new(word: &[u8]) -> Self {
         Trie {
             edges: TrieRefEdges::new(),
             values: ByteString::new(word),
@@ -190,8 +186,8 @@ impl Trie {
         }
     }
 
-    pub fn bytes_arc(word: &[u8]) -> TrieRef {
-        Arc::new(Mutex::new(Trie::bytes(word)))
+    pub fn new_arc(word: &[u8]) -> TrieRef {
+        Arc::new(Mutex::new(Trie::new(word)))
     }
 
     pub fn full_tree(&self) -> Vec<String> {
@@ -252,7 +248,7 @@ impl Trie {
             // no match
             None => {
                 // insert whole vec
-                let trie = Trie::bytes_arc(&word);
+                let trie = Trie::new_arc(&word);
                 trie.lock().unwrap().is_terminal = true;
                 self.edges.insert(trie);
             }
@@ -270,7 +266,7 @@ impl Trie {
                     self.edges.remove(wrap.trie.lock().unwrap().values[0]);
 
                     // direct descendant
-                    let trie_ref_prefix = Trie::bytes_arc(&word[0..wrap.len]);
+                    let trie_ref_prefix = Trie::new_arc(&word[0..wrap.len]);
                     self.edges.insert(trie_ref_prefix.clone());
 
                     // second descendants
