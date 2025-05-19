@@ -6,6 +6,7 @@ mod nano_to;
 use heed::{Database};
 use heed::EnvOpenOptions;
 use std::error::Error;
+use std::time::Duration;
 use http::Uri;
 use nanopyrs::{Account};
 use regex::{Regex};
@@ -16,6 +17,7 @@ use rocket::{get, routes, State};
 use rocket::futures::SinkExt;
 use rocket::log::private::{debug, info, trace};
 use serde_json::Value;
+use tokio::time::{sleep};
 use tokio_websockets::{ClientBuilder, Message};
 
 #[get("/<string>")]
@@ -49,6 +51,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let root = Trie::bytes_arc(&[]);
     let root_ws = root.clone();
+
+    tokio::spawn(async move {
+        sleep(Duration::from_secs(86400)).await;
+        nano_to::update();
+    });
     
     tokio::spawn(async move {
         info!("Starting ws thread");
@@ -126,8 +133,8 @@ fn build_trie_from_db(root: TrieRef) -> Result<(), Box<dyn Error>> {
                 total += 1;
                 // debug!("{}", acc.account);
                 let accounts_value = AccountsValue::from_bytes(&accounts_value_bytes);
-                if accounts_value.balance <= 100 {
-                    trace!("{} has less than 100 raw: Skipping.", acc.account);
+                if accounts_value.balance <= 10 {
+                    trace!("{} has less than 10 raw: Skipping.", acc.account);
                     continue;
                 }
 
@@ -142,7 +149,7 @@ fn build_trie_from_db(root: TrieRef) -> Result<(), Box<dyn Error>> {
 
                 count += 1;
                 if total % 1000000 == 0 {
-                    info!("Trie size: {}/{}", count, total);
+                    debug!("Trie size: {}/{}", count, total);
                 }
             }
             Err(_) => {}

@@ -8,8 +8,6 @@ const REPO_PATH: &str = "~/.cache/nano_search/nano_to";
 
 // https://docs.rs/git2/latest/git2/index.html
 pub fn update() {
-    // TODO: check every day
-    
     match Path::new(REPO_PATH).exists() {
         true => {
             // https://stackoverflow.com/questions/58768910/how-to-perform-git-pull-with-the-rust-git2-crate
@@ -42,9 +40,8 @@ pub fn update() {
 }
 
 pub fn search(alias: &str) -> Vec<String> {
-    // TODO: do a prefix search on the hundred or so aliases
+    // do a prefix search on the hundred or so aliases
     // can probably get away with a sequential search
-    update();
     let mut vec = Vec::new();
 
     let alias_lower = alias.to_ascii_lowercase();

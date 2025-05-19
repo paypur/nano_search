@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use rocket::log::private::{info,warn};
 use nano_search::ByteString;
 
+const AUTO_COMPLETE_LIMIT: usize = 8;
 const CHAR_INDEX_MAP: [usize; 128] = [
     0,0,0,0,0,0,0,0,
     0,0,0,0,0,0,0,0,
@@ -25,7 +26,6 @@ const CHAR_INDEX_MAP: [usize; 128] = [
     22,23,24,25,26,27, 0,28,
     29,30,31, 0, 0, 0, 0, 0
 ];
-const AUTO_COMPLETE_LIMIT: usize = 5;
 
 pub type TrieRef = Arc<Mutex<Trie>>;
 
