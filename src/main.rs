@@ -73,45 +73,45 @@ async fn main() -> Result<(), Box<dyn Error>> {
         nano_to::update();
     });
     
-    // tokio::spawn(async move {
-    //     info!("Starting ws thread");
-    // 
-    //     let uri = Uri::from_static("wss://nodews.hansenjc.com");
-    //     // TODO: ws will probably fail sometimes
-    //     let (mut client, _) = ClientBuilder::from_uri(uri)
-    //         .connect()
-    //         .await
-    //         .expect("Failed to connect to websocket!");
-    // 
-    //     // https://docs.nano.org/integration-guides/websockets/#confirmations
-    //     client.send(Message::text(r#"{"action":"subscribe","topic":"confirmation"}"#))
-    //         .await
-    //         .unwrap();
-    // 
-    //     while let Some(item) = client.next().await {
-    //         if let Ok(msg) = item {
-    //             let val: Value = serde_json::from_str(msg.as_text().unwrap()).unwrap();
-    //             if val["message"]["block"]["subtype"].as_str().unwrap() != "receive" ||
-    //                 val["message"]["block"]["previous"].as_str().unwrap() != "0000000000000000000000000000000000000000000000000000000000000000" {
-    //                 break;
-    //             }
-    //             let addr = ByteString::new(
-    //                 val["message"]["account"]
-    //                 .as_str()
-    //                 .unwrap()
-    //                 .strip_prefix("nano_")
-    //                 .unwrap()
-    //                 .as_bytes()
-    //             );
-    //             info!("WS: new account opened {}", addr);
-    //             root_ws.lock()
-    //                 .unwrap()
-    //                 .build(&addr);
-    //         }
-    //     }
-    // });
+    tokio::spawn(async move {
+        info!("Starting ws thread");
+    
+        let uri = Uri::from_static("wss://nodews.hansenjc.com");
+        // TODO: ws will probably fail sometimes
+        let (mut client, _) = ClientBuilder::from_uri(uri)
+            .connect()
+            .await
+            .expect("Failed to connect to websocket!");
+    
+        // https://docs.nano.org/integration-guides/websockets/#confirmations
+        client.send(Message::text(r#"{"action":"subscribe","topic":"confirmation"}"#))
+            .await
+            .unwrap();
+    
+        while let Some(item) = client.next().await {
+            if let Ok(msg) = item {
+                let val: Value = serde_json::from_str(msg.as_text().unwrap()).unwrap();
+                if val["message"]["block"]["subtype"].as_str().unwrap() != "receive" ||
+                    val["message"]["block"]["previous"].as_str().unwrap() != "0000000000000000000000000000000000000000000000000000000000000000" {
+                    break;
+                }
+                let addr = ByteString::new(
+                    val["message"]["account"]
+                    .as_str()
+                    .unwrap()
+                    .strip_prefix("nano_")
+                    .unwrap()
+                    .as_bytes()
+                );
+                info!("WS: new account opened {}", addr);
+                root_ws.lock()
+                    .unwrap()
+                    .build(&addr);
+            }
+        }
+    });
 
-    // build_trie_from_db(root.clone())?;
+    build_trie_from_db(root.clone())?;
 
     rocket::build()
         .mount("/api", routes![search])
