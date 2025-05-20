@@ -5,7 +5,9 @@ COPY . .
 RUN RUST_LOG=info cargo install --path .
 
 # discard tooling
-FROM debian:buster-slim
-RUN apt-get update &amp;amp;amp; apt-get install -y extra-runtime-dependencies &amp;amp;amp; rm -rf /var/lib/apt/lists/*
+FROM archlinux:base
+RUN pacman -Syu --noconfirm
 COPY --from=builder /usr/local/cargo/bin/nano_search /usr/local/bin/nano_search
+
+WORKDIR /data
 CMD ["nano_search"]
